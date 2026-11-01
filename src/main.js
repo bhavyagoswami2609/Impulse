@@ -149,7 +149,7 @@ class TableTennisApp {
       }
     }
 
-    // 3. Face Tracking (Head VR Perspective) state
+    // 3. Face Tracking (Head Perspective) state
     const isFaceTracking = Boolean(this.faceTracker && this.faceTracker.enabled);
     const btnFaceTrack = document.getElementById('btn-toggle-facetrack');
     const faceTrackBtnText = document.getElementById('facetrack-btn-text');
@@ -157,7 +157,7 @@ class TableTennisApp {
       btnFaceTrack.classList.toggle('vr-active', isFaceTracking);
     }
     if (faceTrackBtnText) {
-      faceTrackBtnText.textContent = isFaceTracking ? 'HEAD VR: ON' : 'HEAD VR: OFF';
+      faceTrackBtnText.textContent = isFaceTracking ? 'HEAD TRACKING: ON' : 'HEAD TRACKING: OFF';
     }
 
     // 4. Audio state
@@ -238,7 +238,7 @@ class TableTennisApp {
     sound.ensureContext();
     const enabled = await this.faceTracker.toggle();
     this.syncHUD();
-    this.showActionToast(enabled ? 'HEAD VR PERSPECTIVE: ON' : 'HEAD VR PERSPECTIVE: OFF');
+    this.showActionToast(enabled ? 'HEAD TRACKING: ON' : 'HEAD TRACKING: OFF');
 
     if (enabled) {
       // If webcam is not yet running, start it up automatically so face tracking can track
@@ -899,9 +899,10 @@ class TableTennisApp {
     // 1. Get smoothly filtered paddle/striker transform from Hand Tracker or Mouse
     const localPaddleTransform = this.tracker.getTransform(deltaTime);
 
-    // 1b. Update Face Tracking Parallax Offset (VR Perspective)
+    // 1b. Update Face Tracking Parallax Offset & Head Yaw Rotation
     const headOffset = this.faceTracker.getParallaxOffset(deltaTime);
-    this.scene.setHeadParallaxOffset(headOffset);
+    const headYaw = this.faceTracker.getYaw(deltaTime);
+    this.scene.setHeadParallaxOffset(headOffset, headYaw);
 
     // 1c. Draw Holographic Face Box on PIP Canvas if active
     if (this.faceTracker.enabled && this.tracker.canvasCtx && this.tracker.canvasElement) {

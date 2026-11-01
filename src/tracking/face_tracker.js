@@ -59,23 +59,29 @@ export class FaceTracker {
     this.filterX = new OneEuroFilter(1.2, 0.05, 1.0);
     this.filterY = new OneEuroFilter(1.2, 0.05, 1.0);
     this.filterZ = new OneEuroFilter(1.0, 0.03, 1.0);
+    this.filterYaw = new OneEuroFilter(1.2, 0.05, 1.0); // Head Yaw rotation filter
 
-    // 3D Parallax Offsets (Three.js world units)
+    // 3D Parallax Offsets & Head Yaw (Three.js world units & radians)
     this.targetOffset = new THREE.Vector3(0, 0, 0);
     this.currentOffset = new THREE.Vector3(0, 0, 0);
+    this.targetYaw = 0;
+    this.currentYaw = 0;
 
-    // Calibrated neutral center { x, y, size }
+    // Calibrated neutral center { x, y, size } and neutral yaw
     this.neutralCenter = null;
+    this.neutralYaw = 0;
     this.autoCalibrateCount = 0;
 
     // Parallax Sensitivity Gains & Clamps
     this.gainX = options.gainX ?? 1.85; // Lateral parallax gain
     this.gainY = options.gainY ?? 1.30; // Vertical elevation gain
     this.gainZ = options.gainZ ?? 2.10; // Lean forward/back zoom gain
+    this.gainYaw = options.gainYaw ?? 0.85; // Head yaw rotation sensitivity gain
 
     this.maxOffsetX = options.maxOffsetX ?? 0.45; // Max lateral shift (m)
     this.maxOffsetY = options.maxOffsetY ?? 0.25; // Max elevation shift (m)
     this.maxOffsetZ = options.maxOffsetZ ?? 0.35; // Max depth shift (m)
+    this.maxYaw = options.maxYaw ?? 0.45;         // Max head yaw (~26 degrees)
 
     // MediaPipe FaceDetection instance
     this.faceDetection = null;
@@ -148,6 +154,7 @@ export class FaceTracker {
     this.enabled = false;
     this.stopTracking();
     this.targetOffset.set(0, 0, 0);
+    this.targetYaw = 0;
     this.latestFaceBox = null;
     this.latestLandmarks = null;
     this.faceDetected = false;
@@ -327,11 +334,53 @@ export class FaceTracker {
       const offsetZ = THREE.MathUtils.clamp(dSize * this.gainZ, -this.maxOffsetZ, this.maxOffsetZ);
 
       this.targetOffset.set(offsetX, offsetY, offsetZ);
+
+      // Head Yaw Rotation (Looking Left vs Looking Right around vertical Y-axis)
+      // Keypoints: 0: Right Eye, 1: Left Eye, 2: Nose Tip, (4: Right Ear, 5: Left Ear)
+      if (landmarks && landmarks.length >= 3) {
+        const rightEye = landmarks[0];
+        const leftEye = landmarks[1];
+        const nose = landmarks[2];
+
+        const midEyeX = (rightEye.x + leftEye.x) / 2;
+        const eyeSpan = Math.max(0.02, Math.hypot(leftEye.x - rightEye.x, leftEye.y - rightEye.y));
+
+        // When user turns head to their RIGHT, nose moves towards left side of camera frame (smaller X).
+        // Negating this difference makes looking RIGHT positive (unmirrored):
+        let rawYaw = -(nose.x - midEyeX) / (eyeSpan * 0.55);
+
+        // If ears are present, incorporate ear distance disparity for enhanced rotational accuracy
+        if (landmarks.length >= 6 && landmarks[4] && landmarks[5]) {
+          const rightEar = landmarks[4];
+          const leftEar = landmarks[5];
+          const earSpan = Math.hypot(leftEar.x - rightEar.x, leftEar.y - rightEar.y);
+          if (earSpan > eyeSpan * 1.05) {
+            const dRightEar = Math.hypot(nose.x - rightEar.x, nose.y - rightEar.y);
+            const dLeftEar = Math.hypot(nose.x - leftEar.x, nose.y - leftEar.y);
+            const earYaw = (dLeftEar - dRightEar) / (earSpan * 0.65);
+            rawYaw = rawYaw * 0.65 + earYaw * 0.35;
+          }
+        }
+
+        if (this.invertX) {
+          rawYaw = -rawYaw;
+        }
+
+        const filteredYaw = this.filterYaw.filter(rawYaw, now);
+
+        if (!this.neutralCenter || this.autoCalibrateCount < 5) {
+          this.neutralYaw = this.neutralYaw * 0.7 + filteredYaw * 0.3;
+        }
+
+        const deltaYaw = filteredYaw - this.neutralYaw;
+        this.targetYaw = THREE.MathUtils.clamp(deltaYaw * this.gainYaw, -this.maxYaw, this.maxYaw);
+      }
     } else {
       // If no face detected for > 600ms, gently return to neutral
       if (now - this.lastDetectedTime > 600) {
         this.faceDetected = false;
         this.targetOffset.set(0, 0, 0);
+        this.targetYaw = 0;
       }
     }
   }
@@ -343,6 +392,7 @@ export class FaceTracker {
     this.filterX = new OneEuroFilter(1.2, 0.05, 1.0);
     this.filterY = new OneEuroFilter(1.2, 0.05, 1.0);
     this.filterZ = new OneEuroFilter(1.0, 0.03, 1.0);
+    this.filterYaw = new OneEuroFilter(1.2, 0.05, 1.0);
 
     if (this.latestFaceBox) {
       const rawX = this.invertX ? (1.0 - this.latestFaceBox.xCenter) : this.latestFaceBox.xCenter;
@@ -354,19 +404,65 @@ export class FaceTracker {
         y: rawY,
         size: rawSize,
       };
+
+      if (this.latestLandmarks && this.latestLandmarks.length >= 3) {
+        const rightEye = this.latestLandmarks[0];
+        const leftEye = this.latestLandmarks[1];
+        const nose = this.latestLandmarks[2];
+        const midEyeX = (rightEye.x + leftEye.x) / 2;
+        const eyeSpan = Math.max(0.02, Math.hypot(leftEye.x - rightEye.x, leftEye.y - rightEye.y));
+        let rawYaw = -(nose.x - midEyeX) / (eyeSpan * 0.55);
+        if (this.invertX) rawYaw = -rawYaw;
+        this.neutralYaw = rawYaw;
+      } else {
+        this.neutralYaw = 0;
+      }
+
       this.autoCalibrateCount = 10; // Lock calibration
       this.targetOffset.set(0, 0, 0);
       this.currentOffset.set(0, 0, 0);
+      this.targetYaw = 0;
+      this.currentYaw = 0;
       return true;
     } else {
       // Pending calibration: zero offsets and lock the next detected frame
       this.neutralCenter = null;
+      this.neutralYaw = 0;
       this.autoCalibrateCount = 0;
       this.targetOffset.set(0, 0, 0);
       this.currentOffset.set(0, 0, 0);
+      this.targetYaw = 0;
+      this.currentYaw = 0;
       this.mouseNormalized = { x: 0, y: 0 };
       return true;
     }
+  }
+
+  /**
+   * Returns the current smoothed Head Yaw angle in radians around the Y-axis.
+   * Positive = Looking Right (Unmirrored, screen moves right)
+   * Negative = Looking Left (Unmirrored, screen moves left)
+   * Smoothly returns to 0 when disabled.
+   *
+   * @param {number} deltaTime Frame delta in seconds
+   * @returns {number} Head yaw angle in radians
+   */
+  getYaw(deltaTime) {
+    const dt = Math.max(0.001, Math.min(deltaTime, 0.05));
+
+    if (!this.enabled) {
+      this.currentYaw += (0 - this.currentYaw) * Math.min(1.0, dt * 10.0);
+      return this.currentYaw;
+    }
+
+    if (this.useMouseFallback && (!this.isTracking || !this.faceDetected)) {
+      // Mouse fallback: moving mouse right rotates view right (positive yaw)
+      const mouseFactor = this.invertX ? -0.32 : 0.32;
+      this.targetYaw = THREE.MathUtils.clamp(this.mouseNormalized.x * mouseFactor, -this.maxYaw, this.maxYaw);
+    }
+
+    this.currentYaw += (this.targetYaw - this.currentYaw) * Math.min(1.0, dt * 11.0);
+    return this.currentYaw;
   }
 
   /**
@@ -480,7 +576,16 @@ export class FaceTracker {
     ctx.fillStyle = '#00e5ff';
     ctx.font = 'bold 9px "Segoe UI", Arial, sans-serif';
     ctx.shadowBlur = 4;
-    ctx.fillText('VR HEAD TRACKED', x + 4, y - 6);
+    ctx.fillText('HEAD TRACKED', x + 4, y - 6);
+
+    // 4. Subtle Real-Time Head Rotation (Yaw) Indicator
+    if (Math.abs(this.currentYaw) > 0.05) {
+      const deg = Math.round(THREE.MathUtils.radToDeg(this.currentYaw));
+      const dirText = deg > 0 ? 'LOOKING RIGHT ▶' : '◀ LOOKING LEFT';
+      ctx.fillStyle = 'rgba(0, 229, 255, 0.9)';
+      ctx.font = 'bold 8.5px "Segoe UI", Arial, sans-serif';
+      ctx.fillText(`${dirText} (${Math.abs(deg)}°)`, x + 4, y + h + 13);
+    }
 
     ctx.restore();
   }

@@ -255,4 +255,105 @@ console.log('\n--- Test 4: Dynamic Face Center Recalibration on Button Click ---
   console.log('✓ Calibrated pose stably maintained as neutral origin');
 }
 
-console.log('\n=== ALL FACE TRACKING & PARALLAX TESTS PASSED! ===');
+// 5. Test Head Yaw Rotation (Looking Left / Looking Right around vertical Y-axis)
+console.log('\n--- Test 5: Head Yaw Rotation (Looking Left vs. Right around Y-axis) ---');
+{
+  const tracker = new FaceTracker({
+    gainYaw: 0.85,
+    maxYaw: 0.45,
+  });
+  tracker.enabled = true;
+
+  let simTime = 3000;
+  const stepFace = (box, landmarks = []) => {
+    simTime += 16.67;
+    tracker.onDetectionResults({
+      detections: [
+        {
+          boundingBox: box,
+          landmarks,
+        },
+      ],
+    }, simTime);
+    tracker.getParallaxOffset(0.016);
+    return tracker.getYaw(0.016);
+  };
+
+  // Base neutral face at center: Right Eye at 0.45, Left Eye at 0.55, Nose at 0.50
+  const neutralBox = { xCenter: 0.50, yCenter: 0.50, width: 0.22, height: 0.28 };
+  const neutralLandmarks = [
+    { x: 0.45, y: 0.45 }, // Right Eye (0)
+    { x: 0.55, y: 0.45 }, // Left Eye (1)
+    { x: 0.50, y: 0.52 }, // Nose Tip (2)
+    { x: 0.50, y: 0.60 }, // Mouth (3)
+    { x: 0.38, y: 0.47 }, // Right Ear (4)
+    { x: 0.62, y: 0.47 }, // Left Ear (5)
+  ];
+
+  // Warm up and calibrate
+  for (let i = 0; i < 15; i++) {
+    stepFace(neutralBox, neutralLandmarks);
+  }
+  tracker.setNeutralCenter();
+
+  let yaw = tracker.getYaw(0.016);
+  assert(Math.abs(yaw) < 0.05, `Neutral head yaw should be ~0, got ${yaw}`);
+  console.log(`✓ Neutral Head Yaw calibrated: yaw = ${(THREE.MathUtils.radToDeg(yaw)).toFixed(2)}° (${yaw.toFixed(4)} rad)`);
+
+  // User looks to their RIGHT: head position DOES NOT move (xCenter stays 0.50),
+  // but face rotates around Y: nose turns towards right eye (nose.x moves from 0.50 to 0.46)
+  const lookRightLandmarks = [
+    { x: 0.45, y: 0.45 },
+    { x: 0.54, y: 0.45 },
+    { x: 0.465, y: 0.52 }, // Nose shifted rightward relative to face
+    { x: 0.47, y: 0.60 },
+    { x: 0.41, y: 0.47 },
+    { x: 0.61, y: 0.47 },
+  ];
+  for (let i = 0; i < 40; i++) {
+    yaw = stepFace(neutralBox, lookRightLandmarks);
+  }
+  assert(yaw > 0.12, `Looking to the RIGHT must produce positive Yaw in unmirrored mode (got ${yaw})`);
+  console.log(`✓ Looking to the RIGHT: detected positive yaw +${(THREE.MathUtils.radToDeg(yaw)).toFixed(2)}° (+${yaw.toFixed(3)} rad) without moving head position`);
+
+  // Verify camera rotation when looking RIGHT (Host View: camera pans to screen right, target shifts to -X)
+  const hostCamPos = new THREE.Vector3(0, 1.48, -2.55);
+  const hostBaseTarget = new THREE.Vector3(0, 0.82, 0.20);
+  const baseDir = hostBaseTarget.clone().sub(hostCamPos);
+  const rotatedDirRight = baseDir.clone().applyAxisAngle(new THREE.Vector3(0, 1, 0), -yaw);
+  const effectiveTargetRight = hostCamPos.clone().add(rotatedDirRight);
+  assert(effectiveTargetRight.x < -0.10, `Camera target must shift towards screen right (-X), got ${effectiveTargetRight.x}`);
+  console.log(`✓ Camera view cleanly turns to the RIGHT: target.x = ${effectiveTargetRight.x.toFixed(3)} (Screen Right)`);
+
+  // User looks to their LEFT: head position DOES NOT move (xCenter stays 0.50),
+  // nose turns towards left eye (nose.x moves from 0.50 to 0.535)
+  const lookLeftLandmarks = [
+    { x: 0.46, y: 0.45 },
+    { x: 0.55, y: 0.45 },
+    { x: 0.535, y: 0.52 }, // Nose shifted leftward relative to face
+    { x: 0.53, y: 0.60 },
+    { x: 0.39, y: 0.47 },
+    { x: 0.59, y: 0.47 },
+  ];
+  for (let i = 0; i < 50; i++) {
+    yaw = stepFace(neutralBox, lookLeftLandmarks);
+  }
+  assert(yaw < -0.12, `Looking to the LEFT must produce negative Yaw in unmirrored mode (got ${yaw})`);
+  console.log(`✓ Looking to the LEFT: detected negative yaw ${(THREE.MathUtils.radToDeg(yaw)).toFixed(2)}° (${yaw.toFixed(3)} rad) without moving head position`);
+
+  // Verify camera rotation when looking LEFT (Host View: camera pans to screen left, target shifts to +X)
+  const rotatedDirLeft = baseDir.clone().applyAxisAngle(new THREE.Vector3(0, 1, 0), -yaw);
+  const effectiveTargetLeft = hostCamPos.clone().add(rotatedDirLeft);
+  assert(effectiveTargetLeft.x > 0.10, `Camera target must shift towards screen left (+X), got ${effectiveTargetLeft.x}`);
+  console.log(`✓ Camera view cleanly turns to the LEFT: target.x = +${effectiveTargetLeft.x.toFixed(3)} (Screen Left)`);
+
+  // Verify disable zeroes yaw smoothly
+  tracker.disable();
+  for (let i = 0; i < 30; i++) {
+    yaw = tracker.getYaw(0.016);
+  }
+  assert(Math.abs(yaw) < 0.01, `Disabling must smoothly return yaw to 0, got ${yaw}`);
+  console.log('✓ Disabling smoothly returns head yaw rotation to 0.00°');
+}
+
+console.log('\n=== ALL HEAD TRACKING, PARALLAX & ROTATION TESTS PASSED! ===');

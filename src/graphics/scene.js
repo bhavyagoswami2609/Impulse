@@ -66,6 +66,8 @@ export class TableTennisScene {
     this.currentViewMode = 'host';
     this.headParallaxOffset = new THREE.Vector3(0, 0, 0);
     this.smoothedHeadOffset = new THREE.Vector3(0, 0, 0);
+    this.headYaw = 0;
+    this.smoothedHeadYaw = 0;
     this.setViewMode('host');
 
     // 4. Lighting
@@ -327,10 +329,17 @@ export class TableTennisScene {
     this.setViewMode(this.currentViewMode);
   }
 
-  setHeadParallaxOffset(offset) {
+  setHeadParallaxOffset(offset, yaw = 0) {
     if (offset) {
       this.headParallaxOffset.copy(offset);
     }
+    if (typeof yaw === 'number') {
+      this.headYaw = yaw;
+    }
+  }
+
+  setHeadTracking(offset, yaw = 0) {
+    this.setHeadParallaxOffset(offset, yaw);
   }
 
   setViewMode(mode) {
@@ -346,7 +355,7 @@ export class TableTennisScene {
   }
 
   update(deltaTime) {
-    // 0. Smooth Camera Perspective with Head-Tracking Parallax (VR window effect)
+    // 0. Smooth Camera Perspective with Head-Tracking Parallax and Yaw Rotation
     const view = this.views[this.currentViewMode] || this.views.host;
     if (view) {
       if (view.up) {
@@ -356,6 +365,7 @@ export class TableTennisScene {
       }
 
       this.smoothedHeadOffset.lerp(this.headParallaxOffset, Math.min(1.0, deltaTime * 12.0));
+      this.smoothedHeadYaw += (this.headYaw - this.smoothedHeadYaw) * Math.min(1.0, deltaTime * 12.0);
 
       const camX = view.position.x;
       const camY = view.position.y;
@@ -388,7 +398,18 @@ export class TableTennisScene {
         );
       }
 
-      this.camera.lookAt(view.target);
+      // Apply Head Yaw Rotation around vertical axis:
+      // When looking right (smoothedHeadYaw > 0), the camera pans towards the right
+      // When looking left (smoothedHeadYaw < 0), the camera pans towards the left
+      if (Math.abs(this.smoothedHeadYaw) > 0.0001) {
+        const upAxis = view.up ? view.up.clone() : new THREE.Vector3(0, 1, 0);
+        const baseDir = view.target.clone().sub(this.camera.position);
+        const rotatedDir = baseDir.applyAxisAngle(upAxis, -this.smoothedHeadYaw);
+        const effectiveTarget = this.camera.position.clone().add(rotatedDir);
+        this.camera.lookAt(effectiveTarget);
+      } else {
+        this.camera.lookAt(view.target);
+      }
     }
 
     // Fade out impact ring
