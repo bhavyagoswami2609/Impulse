@@ -134,6 +134,8 @@ export class HandTracker {
     this.spidermanGestureProgress = 0;
     this.gestureCalibratedFlashTimer = 0;
     this.lastResultsTimestamp = 0;
+    this.latestLandmarks = null;
+    this.isSpidermanActive = false;
 
     this.isTracking = false;
     this.isStarting = false;
@@ -433,8 +435,8 @@ export class HandTracker {
           this.handsInstance.setOptions({
             maxNumHands: 1,
             modelComplexity: 1,
-            minDetectionConfidence: 0.6,
-            minTrackingConfidence: 0.55,
+            minDetectionConfidence: 0.48,
+            minTrackingConfidence: 0.45,
           });
 
           this.handsInstance.onResults(this.onMediaPipeResults.bind(this));
@@ -687,40 +689,7 @@ export class HandTracker {
       this.lastResultsTimestamp = now;
       this.lastDetectedTime = now;
       const landmarks = results.multiHandLandmarks[0];
-
-      // Spider-Man (🤟) Gesture Detection & Calibration
-      const isSpiderman = this.isSpidermanSign(landmarks);
-
-      if (this.gestureCalibratedFlashTimer > 0) {
-        this.gestureCalibratedFlashTimer = Math.max(0, this.gestureCalibratedFlashTimer - dt);
-      }
-
-      if (this.spidermanGestureCooldown > 0) {
-        this.spidermanGestureCooldown = Math.max(0, this.spidermanGestureCooldown - dt);
-      }
-
-      if (isSpiderman && this.spidermanGestureCooldown <= 0) {
-        this.spidermanGestureTimer += dt;
-        this.spidermanGestureProgress = Math.min(1.0, this.spidermanGestureTimer / 0.20);
-
-        if (this.spidermanGestureProgress >= 1.0) {
-          this.spidermanGestureTimer = 0;
-          this.spidermanGestureProgress = 0;
-          this.spidermanGestureCooldown = 2.0;
-          this.gestureCalibratedFlashTimer = 1.4;
-
-          this.setNeutralCenter(this.lastRawHand);
-
-          if (this.onGestureCalibrate) {
-            this.onGestureCalibrate();
-          }
-        }
-      } else if (!isSpiderman) {
-        this.spidermanGestureTimer = Math.max(0, this.spidermanGestureTimer - dt * 2.0);
-        this.spidermanGestureProgress = 0;
-      }
-
-      this.drawHandSkeleton(ctx, landmarks, w, h, isSpiderman);
+      this.latestLandmarks = landmarks;
 
       const wrist = landmarks[0];
       const indexKnuckle = landmarks[5];
@@ -754,6 +723,41 @@ export class HandTracker {
       );
 
       this.lastRawHand = { x: userX, y: userY, depth: userDepth, yaw: rawYaw };
+
+      // Spider-Man (🤟) Gesture Detection & Calibration
+      const isSpiderman = this.isSpidermanSign(landmarks);
+      this.isSpidermanActive = isSpiderman;
+
+      if (this.gestureCalibratedFlashTimer > 0) {
+        this.gestureCalibratedFlashTimer = Math.max(0, this.gestureCalibratedFlashTimer - dt);
+      }
+
+      if (this.spidermanGestureCooldown > 0) {
+        this.spidermanGestureCooldown = Math.max(0, this.spidermanGestureCooldown - dt);
+      }
+
+      if (isSpiderman && this.spidermanGestureCooldown <= 0) {
+        this.spidermanGestureTimer += dt;
+        this.spidermanGestureProgress = Math.min(1.0, this.spidermanGestureTimer / 0.20);
+
+        if (this.spidermanGestureProgress >= 1.0) {
+          this.spidermanGestureTimer = 0;
+          this.spidermanGestureProgress = 0;
+          this.spidermanGestureCooldown = 2.0;
+          this.gestureCalibratedFlashTimer = 1.4;
+
+          this.setNeutralCenter(this.lastRawHand);
+
+          if (this.onGestureCalibrate) {
+            this.onGestureCalibrate();
+          }
+        }
+      } else if (!isSpiderman) {
+        this.spidermanGestureTimer = Math.max(0, this.spidermanGestureTimer - dt * 2.0);
+        this.spidermanGestureProgress = 0;
+      }
+
+      this.drawHandSkeleton(ctx, landmarks, w, h, isSpiderman);
 
       if (!this.isCalibrated) {
         this.autoCalibrateTimer += 0.033;
@@ -838,12 +842,23 @@ export class HandTracker {
         hand: isSpiderman ? '🤟 SPIDER-MAN' : (this.isHandOpen ? 'OPEN' : 'GRIP'),
       };
       this.onCalibrationUpdate({ status: 'tracking', readout: this.relativeReadout });
+    } else {
+      const now = performance.now();
+      if (now - this.lastDetectedTime > 350) {
+        this.handDetected = false;
+        this.latestLandmarks = null;
+        this.isSpidermanActive = false;
+        this.spidermanGestureTimer = 0;
+        this.spidermanGestureProgress = 0;
+      }
     }
 
     ctx.restore();
   }
 
   drawHandSkeleton(ctx, landmarks, w, h, isSpiderman = false) {
+    if (!landmarks || landmarks.length < 21) return;
+    ctx.save();
     const refX = (1.0 - this.neutralHand.x) * w;
     const refY = (1.0 - this.neutralHand.y) * h;
 
@@ -951,6 +966,7 @@ export class HandTracker {
       ctx.fillText(`🤟 CALIBRATING ${Math.round(this.spidermanGestureProgress * 100)}%`, cx, cy - 32);
       ctx.restore();
     }
+    ctx.restore();
   }
 
   getTransform(dt = 0.016) {

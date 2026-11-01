@@ -514,9 +514,9 @@ class TableTennisApp {
     const pipSizeText = document.getElementById('pip-size-text');
     if (btnPipSize && pipContainer) {
       const pipSizes = [
-        { cls: '', label: 'BIG' },
-        { cls: 'pip-large', label: 'MAX' },
-        { cls: 'pip-compact', label: 'MIN' },
+        { cls: '', label: 'BIG (420p)', w: 420, h: 236 },
+        { cls: 'pip-large', label: 'MAX (520p)', w: 520, h: 292 },
+        { cls: 'pip-compact', label: 'MIN (300p)', w: 300, h: 169 },
       ];
       let currentSizeIdx = 0;
       btnPipSize.addEventListener('click', () => {
@@ -527,6 +527,10 @@ class TableTennisApp {
         }
         if (pipSizeText) {
           pipSizeText.textContent = `SIZE: ${pipSizes[currentSizeIdx].label}`;
+        }
+        if (webcamCanvas) {
+          webcamCanvas.width = pipSizes[currentSizeIdx].w;
+          webcamCanvas.height = pipSizes[currentSizeIdx].h;
         }
       });
     }
@@ -913,6 +917,46 @@ class TableTennisApp {
     p2Fill.className = `stamina-bar-fill ${p2Val >= 100 ? 'hyper' : ''}`;
   }
 
+  renderPIPCanvas() {
+    if (!this.tracker || !this.tracker.canvasCtx || !this.tracker.canvasElement) return;
+
+    const canvas = this.tracker.canvasElement;
+    const ctx = this.tracker.canvasCtx;
+    const video = this.tracker.videoElement;
+    const w = canvas.width;
+    const h = canvas.height;
+
+    // 1. Draw fresh live webcam video feed directly from video element at 60 FPS
+    if (this.tracker.isTracking && video && video.readyState >= 2) {
+      try {
+        ctx.clearRect(0, 0, w, h);
+        ctx.drawImage(video, 0, 0, w, h);
+      } catch (e) {}
+    } else if (!this.tracker.isTracking) {
+      ctx.fillStyle = '#050b11';
+      ctx.fillRect(0, 0, w, h);
+    }
+
+    // 2. Render Face Tracker Holographic HUD (crisp single pass, zero smearing)
+    if (this.faceTracker && this.faceTracker.enabled) {
+      this.faceTracker.drawPIPOverlay(ctx, w, h);
+    }
+
+    // 3. Render Hand Skeleton & Spider-Man gesture ring (if hand detected)
+    if (this.tracker && this.tracker.isTracking) {
+      const isHandActive = performance.now() - this.tracker.lastDetectedTime < 400;
+      if (isHandActive && this.tracker.latestLandmarks) {
+        this.tracker.drawHandSkeleton(
+          ctx,
+          this.tracker.latestLandmarks,
+          w,
+          h,
+          this.tracker.isSpidermanActive
+        );
+      }
+    }
+  }
+
   animate(now) {
     requestAnimationFrame(this.animate);
 
@@ -927,14 +971,8 @@ class TableTennisApp {
     const headYaw = this.faceTracker.getYaw(deltaTime);
     this.scene.setHeadParallaxOffset(headOffset, headYaw);
 
-    // 1c. Draw Holographic Face Box on PIP Canvas if active
-    if (this.faceTracker.enabled && this.tracker.canvasCtx && this.tracker.canvasElement) {
-      this.faceTracker.drawPIPOverlay(
-        this.tracker.canvasCtx,
-        this.tracker.canvasElement.width,
-        this.tracker.canvasElement.height
-      );
-    }
+    // 1c. Render PIP Camera Canvas (Fresh video + overlays, zero ghosting)
+    this.renderPIPCanvas();
 
     // 2. Update active game (Air Hockey or Table Tennis)
     if (!this.isMenuOpen) {

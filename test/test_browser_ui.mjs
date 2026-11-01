@@ -81,11 +81,13 @@ class CDPClient {
 
 async function main() {
   console.log('=== LAUNCHING HEADLESS CHROME TEST FOR UI & BUTTONS ===');
+  const tempProfile = `/tmp/test-chrome-profile-${Date.now()}`;
   const chromeProcess = spawn(
     CHROME_PATH,
     [
       '--headless=new',
       `--remote-debugging-port=${DEBUG_PORT}`,
+      `--user-data-dir=${tempProfile}`,
       '--enable-webgl',
       '--ignore-gpu-blocklist',
       '--use-gl=angle',

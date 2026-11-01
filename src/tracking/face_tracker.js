@@ -89,7 +89,7 @@ export class FaceTracker {
     this.faceDetection = null;
     this.isProcessing = false;
     this.lastFrameTime = 0;
-    this.frameIntervalMs = 30; // ~30 FPS detection is optimal, zero lag, minimal CPU
+    this.frameIntervalMs = 60; // ~16 FPS detection for silky head tracking without contending with hand tracker
 
     // Video frame callback handle
     this.frameCallbackId = null;
