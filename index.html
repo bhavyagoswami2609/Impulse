@@ -1,0 +1,251 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Xbox 360 Table Tennis</title>
+    <!-- MediaPipe dependencies via reliable CDN -->
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
+    <link rel="stylesheet" href="/src/style.css" />
+  </head>
+  <body>
+    <!-- 3D Canvas Container -->
+    <div id="canvas-container"></div>
+
+    <!-- HUD Overlay Layer -->
+    <div class="hud-layer">
+      <!-- Top Tournament Header & Scoreboard -->
+      <header class="scoreboard-header">
+        <div class="tournament-title">
+          <div class="xbox-logo-pill">XBOX 360</div>
+          <div class="title-details">
+            <div id="match-category" class="match-category">TABLE TENNIS CHAMPIONSHIP</div>
+            <div class="mode-switcher">
+              <button id="btn-mode-tennis" class="mode-pill active" title="Switch to Table Tennis (Hotkey: T)">TABLE TENNIS</button>
+              <button id="btn-mode-hockey" class="mode-pill" title="Switch to Air Hockey (Hotkey: T)">AIR HOCKEY</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Center Scoreboard -->
+        <div class="main-scoreboard">
+          <!-- Player 1 -->
+          <div class="player-score-card">
+            <div class="player-badge p1">
+              <span id="p1-serve-dot" class="serve-dot active"></span>
+              <span id="p1-label">P1 (HOST)</span>
+            </div>
+            <div id="p1-score" class="score-digit">0</div>
+          </div>
+
+          <div class="vs-divider">VS</div>
+
+          <!-- Player 2 -->
+          <div class="player-score-card">
+            <div class="player-badge p2">
+              <span id="p2-serve-dot" class="serve-dot"></span>
+              <span id="p2-label">CPU</span>
+            </div>
+            <div id="p2-score" class="score-digit">0</div>
+          </div>
+        </div>
+
+        <!-- Quick Controls -->
+        <div class="hud-actions">
+          <button id="btn-reset-ball" class="hud-btn" title="Reset Ball (Hotkey: R)">
+            RESET
+          </button>
+          <button id="btn-serve-ball" class="hud-btn primary" title="Serve Ball (Hotkey: Space)">
+            SERVE
+          </button>
+          <button id="btn-calibrate-hand" class="hud-btn" title="Motion Calibration (Hotkey: C)">
+            CALIBRATE
+          </button>
+          <button id="btn-toggle-cam" class="hud-btn active" title="Toggle Webcam Motion Control (Hotkey: M)">
+            <span id="cam-btn-text">WEBCAM: ON</span>
+          </button>
+          <button id="btn-camera-view" class="hud-btn" title="Change Camera View (Hotkey: V)">
+            <span id="cam-view-text">CAM: P1</span>
+          </button>
+          <button id="btn-toggle-sound" class="hud-btn active" title="Toggle Audio">
+            <span id="sound-icon">AUDIO ON</span>
+          </button>
+          <button id="btn-multiplayer" class="hud-btn" title="Multiplayer WebRTC Match">
+            MULTIPLAYER
+          </button>
+        </div>
+      </header>
+
+      <!-- Player 2 Stamina / Power Gauge -->
+      <div class="player-stamina-card p2">
+        <div class="tag-badge" id="hud-p2-badge">CPU</div>
+        <div class="stamina-bar-container">
+          <div id="p2-smash-fill" class="stamina-bar-fill"></div>
+        </div>
+      </div>
+
+      <!-- Player 1 Stamina / Power Gauge -->
+      <div class="player-stamina-card p1">
+        <div class="tag-badge" id="hud-p1-badge">P1</div>
+        <div class="stamina-bar-container">
+          <div id="p1-smash-fill" class="stamina-bar-fill"></div>
+        </div>
+      </div>
+
+      <!-- Central Action Toast -->
+      <div class="toast-container">
+        <div id="action-toast" class="action-toast">MATCH START</div>
+      </div>
+
+      <!-- Serve Callout Prompt -->
+      <div class="serve-prompt-container">
+        <div id="serve-prompt" class="serve-prompt">
+          OPEN HAND OR SWING THROUGH BALL TO SERVE
+        </div>
+      </div>
+
+      <!-- Webcam PIP Motion Controller Widget -->
+      <div id="webcam-pip" class="webcam-pip">
+        <div class="pip-header">
+          <div class="pip-title">
+            <span id="tracking-status-dot" class="status-indicator-dot active"></span>
+            <span id="tracking-status-text">INPUT: WEBCAM</span>
+          </div>
+          <button id="btn-pip-quick-center" class="btn-pip-quick-center" title="Lock center reference (Hotkey: C)">
+            SET CENTER
+          </button>
+        </div>
+        <div class="pip-viewport">
+          <video id="webcam-video" playsinline muted autoplay></video>
+          <canvas id="webcam-canvas" width="320" height="240"></canvas>
+        </div>
+        <div class="pip-footer">
+          <span>DIR: <b id="pip-dir-badge" class="filter-badge">CENTER</b></span>
+          <span id="pip-fps">60 FPS</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Motion Setup & Calibration Modal -->
+    <div id="calibration-modal" class="modal-overlay">
+      <div class="modal-card">
+        <button id="modal-calib-close" class="modal-close">&times;</button>
+        <div class="modal-title">MOTION TRACKING CALIBRATION</div>
+        <p class="modal-subtitle">
+          Align your hand at a comfortable neutral center position in front of the camera. Movement is mapped relative to this reference point.
+        </p>
+
+        <!-- Live Status Guide -->
+        <div class="calibration-guide-box">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px;">
+            <span style="font-size: 11px; color: #9cb3c9; text-transform: uppercase;">Current Motion State:</span>
+            <span id="calib-live-direction" class="live-direction-badge">CENTER</span>
+          </div>
+
+          <!-- Sensitivity Sliders -->
+          <div class="calibration-row">
+            <label for="slider-sens-x">Horizontal Sensitivity (X):</label>
+            <div class="slider-ctrl">
+              <input id="slider-sens-x" type="range" min="1.0" max="4.0" step="0.1" value="2.4" />
+              <span id="val-sens-x" class="slider-val">2.4x</span>
+            </div>
+          </div>
+
+          <div class="calibration-row">
+            <label for="slider-sens-y">Vertical Sensitivity (Y):</label>
+            <div class="slider-ctrl">
+              <input id="slider-sens-y" type="range" min="1.0" max="3.5" step="0.1" value="1.8" />
+              <span id="val-sens-y" class="slider-val">1.8x</span>
+            </div>
+          </div>
+
+          <div class="calibration-row">
+            <label for="slider-sens-z">Forward Reach Depth (Z):</label>
+            <div class="slider-ctrl">
+              <input id="slider-sens-z" type="range" min="1.0" max="3.5" step="0.1" value="2.0" />
+              <span id="val-sens-z" class="slider-val">2.0x</span>
+            </div>
+          </div>
+
+          <div class="calibration-row">
+            <label for="slider-smooth">Motion Smoothing Rate:</label>
+            <div class="slider-ctrl">
+              <input id="slider-smooth" type="range" min="14" max="40" step="2" value="28" />
+              <span id="val-smooth" class="slider-val">28</span>
+            </div>
+          </div>
+
+          <div class="calibration-row" style="margin-top: 10px; border-top: 1px solid rgba(255, 255, 255, 0.08); padding-top: 10px;">
+            <label for="chk-invert-x">Mirror Camera / Invert X:</label>
+            <input id="chk-invert-x" type="checkbox" style="width: 18px; height: 18px; accent-color: #00ddff;" />
+          </div>
+        </div>
+
+        <button id="btn-set-center-modal" class="modal-btn success" style="margin-bottom: 10px;">
+          LOCK CURRENT HAND AS CENTER (C)
+        </button>
+        <button id="btn-save-calib-modal" class="modal-btn">
+          APPLY & RESUME
+        </button>
+      </div>
+    </div>
+
+    <!-- Match Over / Victory Modal -->
+    <div id="matchover-modal" class="modal-overlay">
+      <div class="modal-card matchover-card">
+        <div id="matchover-headline" class="winner-headline">PLAYER 1 WINS</div>
+        <p style="font-size: 13px; color: #9cb3c9; margin-bottom: 6px; text-transform: uppercase;">Final Match Score</p>
+        <div id="matchover-final-score" class="final-score-box">11 - 8</div>
+        <button id="btn-match-restart" class="modal-btn success">
+          START REMATCH
+        </button>
+      </div>
+    </div>
+
+    <!-- Multiplayer Connection Modal -->
+    <div id="multiplayer-modal" class="modal-overlay">
+      <div class="modal-card">
+        <button id="modal-close-btn" class="modal-close">&times;</button>
+        <div class="modal-title">MULTIPLAYER NETWORK MATCH</div>
+        <p class="modal-subtitle">
+          Connect two browser tabs or two separate computers over WebRTC peer data channels.
+          Host runs physics calculation, Client camera rotates 180 degrees.
+        </p>
+
+        <!-- Host Section -->
+        <div class="mp-section">
+          <h4>HOST SESSION (PLAYER 1)</h4>
+          <p style="font-size: 12px; color: #a0b6cd; margin-bottom: 8px;">
+            Generate a Room ID to invite Player 2.
+          </p>
+          <button id="btn-create-room" class="modal-btn">CREATE ROOM</button>
+          <div id="room-code-container" class="room-display" style="display: none;">
+            <div id="display-room-code" class="room-code-tag">------</div>
+            <button id="btn-copy-link" class="hud-btn" style="height: 42px;">COPY LINK</button>
+          </div>
+          <button id="btn-open-second-tab" class="modal-btn secondary" style="display: none;">
+            OPEN 2ND WINDOW (SPLIT SCREEN TEST)
+          </button>
+        </div>
+
+        <!-- Client Section -->
+        <div class="mp-section">
+          <h4>JOIN SESSION (PLAYER 2)</h4>
+          <p style="font-size: 12px; color: #a0b6cd; margin-bottom: 8px;">
+            Enter the shared Room ID string:
+          </p>
+          <input id="input-join-code" class="room-input" type="text" placeholder="e.g. TT-AB123" maxlength="12" />
+          <button id="btn-join-room" class="modal-btn">CONNECT & PLAY</button>
+        </div>
+
+        <div id="mp-modal-status" class="mp-status-bar">
+          Mode: Solo / AI Practice
+        </div>
+      </div>
+    </div>
+
+    <!-- Main Module Script -->
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>
