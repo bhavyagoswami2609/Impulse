@@ -43,6 +43,9 @@ class TableTennisApp {
       canvasElement: document.getElementById('webcam-canvas'),
       onStatusChange: this.onTrackingStatusChange.bind(this),
       onCalibrationUpdate: this.onCalibrationUpdate.bind(this),
+      onGestureCalibrate: () => {
+        this.triggerFullCalibration(true);
+      },
     });
 
     // 4b. Initialize Face Tracker for VR Holographic Head Tracking Perspective
@@ -260,7 +263,7 @@ class TableTennisApp {
     return enabled;
   }
 
-  triggerFullCalibration() {
+  triggerFullCalibration(isGesture = false) {
     sound.ensureContext();
     if (sound && sound.playCalibrate) {
       sound.playCalibrate();
@@ -278,7 +281,7 @@ class TableTennisApp {
 
     // 3. Visual feedback
     this.flashCalibrateButton();
-    this.showActionToast('HAND & FACE CALIBRATED ✓');
+    this.showActionToast(isGesture ? '🤟 SPIDER-MAN GESTURE: CALIBRATED ✓' : 'HAND & FACE CALIBRATED ✓');
   }
 
   async handleCalibrate() {

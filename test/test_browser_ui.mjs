@@ -259,6 +259,68 @@ async function main() {
     await wait(100);
     console.log('✓ Calibration settings modal opens and closes cleanly');
 
+    // Test 5b: Spider-Man Hand Sign (🤟) Automatic Calibration
+    console.log('--- Testing Spider-Man Hand Sign (🤟) Automatic Calibration ---');
+    const gestureResult = await client.evaluate(`(async () => {
+      const tracker = window.gameApp.tracker;
+      const seenToasts = [];
+      const origToast = window.gameApp.showActionToast.bind(window.gameApp);
+      window.gameApp.showActionToast = (msg) => {
+        seenToasts.push(msg);
+        origToast(msg);
+      };
+
+      const spidermanLandmarks = [];
+      const wrist = { x: 0.5, y: 0.8, z: 0 };
+      spidermanLandmarks[0] = wrist;
+      // Thumb extended
+      spidermanLandmarks[1] = { x: 0.46, y: 0.74, z: -0.01 };
+      spidermanLandmarks[2] = { x: 0.43, y: 0.70, z: -0.015 };
+      spidermanLandmarks[3] = { x: 0.38, y: 0.67, z: -0.02 };
+      spidermanLandmarks[4] = { x: 0.32, y: 0.65, z: -0.025 };
+      // Helper
+      function addFinger(mcpIdx, rootX, rootY, isExt) {
+        spidermanLandmarks[mcpIdx] = { x: rootX, y: rootY, z: 0 };
+        if (isExt) {
+          spidermanLandmarks[mcpIdx+1] = { x: rootX, y: rootY - 0.08, z: 0 };
+          spidermanLandmarks[mcpIdx+2] = { x: rootX, y: rootY - 0.14, z: 0 };
+          spidermanLandmarks[mcpIdx+3] = { x: rootX, y: rootY - 0.20, z: 0 };
+        } else {
+          spidermanLandmarks[mcpIdx+1] = { x: rootX, y: rootY - 0.05, z: -0.02 };
+          spidermanLandmarks[mcpIdx+2] = { x: rootX, y: rootY - 0.02, z: -0.03 };
+          spidermanLandmarks[mcpIdx+3] = { x: rootX, y: rootY + 0.02, z: -0.02 };
+        }
+      }
+      addFinger(5, 0.46, 0.65, true);  // Index: extended
+      addFinger(9, 0.50, 0.63, false); // Middle: curled
+      addFinger(13, 0.54, 0.65, false);// Ring: curled
+      addFinger(17, 0.58, 0.68, true); // Pinky: extended
+
+      // Feed frames over 250ms to sustain gesture
+      for (let i = 0; i < 9; i++) {
+        tracker.onMediaPipeResults({ multiHandLandmarks: [spidermanLandmarks], image: {} });
+        await new Promise(r => setTimeout(r, 30));
+      }
+
+      window.gameApp.showActionToast = origToast;
+
+      return {
+        isCalibrated: tracker.isCalibrated,
+        cooldown: tracker.spidermanGestureCooldown,
+        seenToasts: seenToasts,
+        currentToast: document.getElementById('action-toast')?.textContent
+      };
+    })()`);
+
+    console.log('gestureResult:', gestureResult);
+    assert.strictEqual(gestureResult.isCalibrated, true, 'HandTracker should be calibrated by Spider-Man gesture');
+    assert(gestureResult.cooldown > 0, 'Cooldown must be active after gesture calibration');
+    assert(
+      gestureResult.seenToasts.some(t => t.includes('SPIDER-MAN')),
+      `Expected Spider-Man toast, saw: ${JSON.stringify(gestureResult.seenToasts)}`
+    );
+    console.log(`✓ Spider-Man hand sign successfully triggered automatic calibration (Toasts: ${JSON.stringify(gestureResult.seenToasts)})`);
+
     // Test 6: Cycle Camera Views
     console.log('--- Testing Camera View Mode Switcher ---');
     const initialView = await client.evaluate('window.gameApp.scene.currentViewMode');

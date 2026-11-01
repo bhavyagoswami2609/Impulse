@@ -126,6 +126,14 @@ export class HandTracker {
 
     this.onStatusChange = options.onStatusChange || (() => {});
     this.onCalibrationUpdate = options.onCalibrationUpdate || (() => {});
+    this.onGestureCalibrate = options.onGestureCalibrate || (() => {});
+
+    // Spider-Man (🤟) gesture calibration states
+    this.spidermanGestureTimer = 0;
+    this.spidermanGestureCooldown = 0;
+    this.spidermanGestureProgress = 0;
+    this.gestureCalibratedFlashTimer = 0;
+    this.lastResultsTimestamp = 0;
 
     this.isTracking = false;
     this.isStarting = false;
@@ -582,6 +590,76 @@ export class HandTracker {
     this.onStatusChange({ status: 'stopped', message: 'Mouse Controls Active' });
   }
 
+  /**
+   * Detects the Spider-Man web-shooting / ILY hand sign (🤟):
+   * - Index finger: EXTENDED
+   * - Pinky finger: EXTENDED
+   * - Middle finger: CURLED / FOLDED into palm
+   * - Ring finger: CURLED / FOLDED into palm
+   * - Thumb: EXTENDED outward from palm
+   */
+  isSpidermanSign(landmarks) {
+    if (!landmarks || landmarks.length < 21) return false;
+
+    const dist = (i, j) => {
+      const p1 = landmarks[i];
+      const p2 = landmarks[j];
+      return Math.hypot(p1.x - p2.x, p1.y - p2.y, (p1.z || 0) - (p2.z || 0));
+    };
+
+    const wrist = 0;
+    const thumbMCP = 2, thumbTip = 4;
+    const indexMCP = 5, indexPIP = 6, indexTip = 8;
+    const middleMCP = 9, middlePIP = 10, middleTip = 12;
+    const ringMCP = 13, ringPIP = 14, ringTip = 16;
+    const pinkyMCP = 17, pinkyPIP = 18, pinkyTip = 20;
+
+    // Palm scale reference: wrist to middle knuckle
+    const palmScale = Math.max(0.04, dist(wrist, middleMCP));
+
+    // 1. Index Finger: EXTENDED
+    const indexDistToWrist = dist(indexTip, wrist);
+    const indexPipToWrist = dist(indexPIP, wrist);
+    const indexExtended = (indexDistToWrist > indexPipToWrist * 1.08) &&
+                          (dist(indexTip, indexMCP) > dist(indexPIP, indexMCP) * 1.12) &&
+                          (indexDistToWrist > palmScale * 1.10);
+
+    // 2. Pinky Finger: EXTENDED
+    const pinkyDistToWrist = dist(pinkyTip, wrist);
+    const pinkyPipToWrist = dist(pinkyPIP, wrist);
+    const pinkyExtended = (pinkyDistToWrist > pinkyPipToWrist * 1.08) &&
+                          (dist(pinkyTip, pinkyMCP) > dist(pinkyPIP, pinkyMCP) * 1.12) &&
+                          (pinkyDistToWrist > palmScale * 0.90);
+
+    // 3. Middle Finger: CURLED / FOLDED
+    const middleDistToWrist = dist(middleTip, wrist);
+    const middlePipToWrist = dist(middlePIP, wrist);
+    const middleCurled = (middleDistToWrist < middlePipToWrist * 1.05) ||
+                         (dist(middleTip, middleMCP) < palmScale * 0.78) ||
+                         (middleDistToWrist < indexDistToWrist * 0.75);
+
+    // 4. Ring Finger: CURLED / FOLDED
+    const ringDistToWrist = dist(ringTip, wrist);
+    const ringPipToWrist = dist(ringPIP, wrist);
+    const ringCurled = (ringDistToWrist < ringPipToWrist * 1.05) ||
+                       (dist(ringTip, ringMCP) < palmScale * 0.78) ||
+                       (ringDistToWrist < pinkyDistToWrist * 0.75);
+
+    // 5. Thumb: EXTENDED OUT
+    const thumbDistToMiddleKnuckle = dist(thumbTip, middleMCP);
+    const thumbDistToIndexKnuckle = dist(thumbTip, indexMCP);
+    const thumbExtended = (thumbDistToMiddleKnuckle > palmScale * 0.45) &&
+                          (thumbDistToIndexKnuckle > palmScale * 0.32) &&
+                          (dist(thumbTip, wrist) > dist(thumbMCP, wrist));
+
+    // 6. Contrast test:
+    const extendedSum = indexDistToWrist + pinkyDistToWrist;
+    const curledSum = middleDistToWrist + ringDistToWrist;
+    const hasContrast = extendedSum > curledSum * 1.18;
+
+    return indexExtended && pinkyExtended && middleCurled && ringCurled && thumbExtended && hasContrast;
+  }
+
   onMediaPipeResults(results) {
     if (!this.canvasCtx || !this.canvasElement) return;
 
@@ -591,14 +669,53 @@ export class HandTracker {
 
     ctx.save();
     ctx.clearRect(0, 0, w, h);
-    ctx.drawImage(results.image, 0, 0, w, h);
+    if (results.image && (results.image.width || results.image.videoWidth)) {
+      try {
+        ctx.drawImage(results.image, 0, 0, w, h);
+      } catch (e) {}
+    }
 
     if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
       this.handDetected = true;
-      this.lastDetectedTime = performance.now();
+      const now = performance.now();
+      const dt = this.lastResultsTimestamp ? Math.min(0.1, (now - this.lastResultsTimestamp) / 1000) : 0.033;
+      this.lastResultsTimestamp = now;
+      this.lastDetectedTime = now;
       const landmarks = results.multiHandLandmarks[0];
 
-      this.drawHandSkeleton(ctx, landmarks, w, h);
+      // Spider-Man (🤟) Gesture Detection & Calibration
+      const isSpiderman = this.isSpidermanSign(landmarks);
+
+      if (this.gestureCalibratedFlashTimer > 0) {
+        this.gestureCalibratedFlashTimer = Math.max(0, this.gestureCalibratedFlashTimer - dt);
+      }
+
+      if (this.spidermanGestureCooldown > 0) {
+        this.spidermanGestureCooldown = Math.max(0, this.spidermanGestureCooldown - dt);
+      }
+
+      if (isSpiderman && this.spidermanGestureCooldown <= 0) {
+        this.spidermanGestureTimer += dt;
+        this.spidermanGestureProgress = Math.min(1.0, this.spidermanGestureTimer / 0.20);
+
+        if (this.spidermanGestureProgress >= 1.0) {
+          this.spidermanGestureTimer = 0;
+          this.spidermanGestureProgress = 0;
+          this.spidermanGestureCooldown = 2.0;
+          this.gestureCalibratedFlashTimer = 1.4;
+
+          this.setNeutralCenter(this.lastRawHand);
+
+          if (this.onGestureCalibrate) {
+            this.onGestureCalibrate();
+          }
+        }
+      } else if (!isSpiderman) {
+        this.spidermanGestureTimer = Math.max(0, this.spidermanGestureTimer - dt * 2.0);
+        this.spidermanGestureProgress = 0;
+      }
+
+      this.drawHandSkeleton(ctx, landmarks, w, h, isSpiderman);
 
       const wrist = landmarks[0];
       const indexKnuckle = landmarks[5];
@@ -695,8 +812,8 @@ export class HandTracker {
         totalTipDist += d;
       }
       const avgFingerTipDist = totalTipDist / tipIndices.length;
-      this.isHandOpen = (avgFingerTipDist / Math.max(0.04, userDepth)) > 1.65;
-      this.justOpenedHand = this.isHandOpen && !this.wasHandOpen;
+      this.isHandOpen = !isSpiderman && ((avgFingerTipDist / Math.max(0.04, userDepth)) > 1.65);
+      this.justOpenedHand = !isSpiderman && (this.isHandOpen && !this.wasHandOpen);
       this.wasHandOpen = this.isHandOpen;
 
       let dirStr = '';
@@ -710,7 +827,7 @@ export class HandTracker {
         dz: targetZ.toFixed(2),
         yaw: `${Math.round((-deltaYaw * 180) / Math.PI)}°`,
         direction: dirStr.trim(),
-        hand: this.isHandOpen ? 'OPEN' : 'GRIP',
+        hand: isSpiderman ? '🤟 SPIDER-MAN' : (this.isHandOpen ? 'OPEN' : 'GRIP'),
       };
       this.onCalibrationUpdate({ status: 'tracking', readout: this.relativeReadout });
     }
@@ -718,7 +835,7 @@ export class HandTracker {
     ctx.restore();
   }
 
-  drawHandSkeleton(ctx, landmarks, w, h) {
+  drawHandSkeleton(ctx, landmarks, w, h, isSpiderman = false) {
     const refX = (1.0 - this.neutralHand.x) * w;
     const refY = (1.0 - this.neutralHand.y) * h;
 
@@ -743,9 +860,15 @@ export class HandTracker {
     ctx.arc(refX, refY, 20, 0, Math.PI * 2);
     ctx.stroke();
 
-    ctx.strokeStyle = this.isHandOpen ? '#ffea00' : '#00ff88';
-    ctx.lineWidth = 2.5;
-    ctx.fillStyle = '#00ddff';
+    // Spider-Man color theme when gesture is charging or active
+    if (isSpiderman || this.spidermanGestureProgress > 0) {
+      ctx.strokeStyle = '#ff0055';
+      ctx.fillStyle = '#ff2a6d';
+    } else {
+      ctx.strokeStyle = this.isHandOpen ? '#ffea00' : '#00ff88';
+      ctx.fillStyle = '#00ddff';
+    }
+    ctx.lineWidth = (isSpiderman || this.spidermanGestureProgress > 0) ? 3.0 : 2.5;
 
     const connections = [
       [0, 1], [1, 2], [2, 3], [3, 4],
@@ -770,6 +893,55 @@ export class HandTracker {
       ctx.arc(p.x * w, p.y * h, 3, 0, Math.PI * 2);
       ctx.fill();
     });
+
+    // Visual HUD Badge & Charging Ring over hand for Spider-Man calibration
+    const midKnuckle = landmarks[9];
+    const cx = midKnuckle.x * w;
+    const cy = midKnuckle.y * h;
+
+    if (this.gestureCalibratedFlashTimer > 0) {
+      ctx.save();
+      ctx.strokeStyle = '#00ff88';
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.arc(cx, cy, 26, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.fillStyle = 'rgba(0, 255, 136, 0.25)';
+      ctx.fill();
+
+      ctx.font = 'bold 12px system-ui, sans-serif';
+      ctx.fillStyle = '#00ff88';
+      ctx.textAlign = 'center';
+      ctx.shadowColor = 'rgba(0, 255, 136, 0.9)';
+      ctx.shadowBlur = 8;
+      ctx.fillText('🤟 CALIBRATED ✓', cx, cy - 32);
+      ctx.restore();
+    } else if (this.spidermanGestureProgress > 0) {
+      const radius = 26;
+      ctx.save();
+      // Background arc track
+      ctx.strokeStyle = 'rgba(255, 0, 80, 0.35)';
+      ctx.lineWidth = 4;
+      ctx.beginPath();
+      ctx.arc(cx, cy, radius, 0, Math.PI * 2);
+      ctx.stroke();
+
+      // Progress arc
+      ctx.strokeStyle = '#ff0055';
+      ctx.lineWidth = 4.5;
+      ctx.beginPath();
+      ctx.arc(cx, cy, radius, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * this.spidermanGestureProgress);
+      ctx.stroke();
+
+      // Text badge
+      ctx.font = 'bold 11px system-ui, sans-serif';
+      ctx.fillStyle = '#ff2a6d';
+      ctx.textAlign = 'center';
+      ctx.shadowColor = 'rgba(255, 42, 109, 0.9)';
+      ctx.shadowBlur = 8;
+      ctx.fillText(`🤟 CALIBRATING ${Math.round(this.spidermanGestureProgress * 100)}%`, cx, cy - 32);
+      ctx.restore();
+    }
   }
 
   getTransform(dt = 0.016) {
