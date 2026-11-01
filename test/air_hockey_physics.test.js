@@ -155,9 +155,10 @@ runTest('Cushion Wall: Corner fillet rounded bounce', () => {
   assert(state.velocity.x < 0, 'vx should reflect inwards');
   assert(state.velocity.z < 0, 'vz should reflect inwards');
 
-  // Center distance to corner center (0.49, 1.01) must satisfy dist <= (Rc - Rp) = 0.022
-  const cornerDist = Math.hypot(state.position.x - 0.49, state.position.z - 1.01);
-  assert(cornerDist <= 0.022 + 1e-4, `Puck depenetrated from fillet: dist=${cornerDist} <= 0.022`);
+  // For 45° corner bouncers: puck position must satisfy x + z <= Kp (~1.41626m)
+  const dims = engine.getTableDimensions();
+  const Kp = (dims.halfWidth - dims.cornerBouncerSize) + dims.halfLength - dims.puckRadius * Math.SQRT2;
+  assert(state.position.x + state.position.z <= Kp + 1e-4, `Puck depenetrated from 45° corner bouncer: sum=${state.position.x + state.position.z} <= ${Kp}`);
 });
 
 runTest('Cushion Wall: Goal post circle-circle bounce (ricochet & carom)', () => {

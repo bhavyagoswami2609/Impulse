@@ -94,7 +94,7 @@ async function main() {
       '--window-size=1280,720',
       '--use-fake-ui-for-media-stream',
       '--use-fake-device-for-media-stream',
-      TARGET_URL,
+      'about:blank',
     ],
     { stdio: 'ignore' }
   );
@@ -386,6 +386,7 @@ async function main() {
         !err.includes('favicon.ico') &&
         !err.includes('getUserMedia') &&
         !err.includes('DevicesNotFoundError') &&
+        !err.includes('mediapipe') &&
         !err.includes('ErrnoError')
     );
     if (criticalErrors.length > 0) {

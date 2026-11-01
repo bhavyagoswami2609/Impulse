@@ -175,7 +175,12 @@ export class FaceTracker {
 
       if (!this.faceDetection) {
         this.faceDetection = new window.FaceDetection({
-          locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/face_detection/${file}`,
+          locateFile: (file) => {
+            if (file.includes('hands')) {
+              return `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`;
+            }
+            return `https://cdn.jsdelivr.net/npm/@mediapipe/face_detection/${file}`;
+          },
         });
 
         await this.faceDetection.setOptions({

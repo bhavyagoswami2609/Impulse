@@ -464,12 +464,23 @@ function createCornerBouncerUnit(aluminumRailMat, reboundCushionMat) {
   const railW = AIR_HOCKEY_RAIL_WIDTH;           // 0.055m
   const railH = AIR_HOCKEY_RAIL_HEIGHT;          // 0.038m
 
+  // Define 2D polygon in (X, Y) plane such that when rotated around X by -Math.PI / 2:
+  // X -> X
+  // Y -> -Z (so Z_table = -Y => Y = -Z_table)
+  // Z_extrude -> Y_table (height from 0 to railH)
+  //
+  // In table space (relative to corner at (0, 0)):
+  // Point 1: inner end-rail junction at (x = -cbSize, z = 0) => shape (-cbSize, 0)
+  // Point 2: inner side-rail junction at (x = 0, z = -cbSize) => shape (0, cbSize)
+  // Point 3: outer side-rail edge at (x = railW, z = -cbSize) => shape (railW, cbSize)
+  // Point 4: outer corner at (x = railW, z = railW) => shape (railW, -railW)
+  // Point 5: outer end-rail edge at (x = -cbSize, z = railW) => shape (-cbSize, -railW)
   const shape = new THREE.Shape();
   shape.moveTo(-cbSize, 0);
-  shape.lineTo(0, -cbSize);
-  shape.lineTo(railW, -cbSize);
-  shape.lineTo(railW, railW);
-  shape.lineTo(-cbSize, railW);
+  shape.lineTo(0, cbSize);
+  shape.lineTo(railW, cbSize);
+  shape.lineTo(railW, -railW);
+  shape.lineTo(-cbSize, -railW);
   shape.closePath();
 
   const extrudeSettings = {
@@ -477,14 +488,7 @@ function createCornerBouncerUnit(aluminumRailMat, reboundCushionMat) {
     bevelEnabled: false,
   };
   const wedgeGeo = new THREE.ExtrudeGeometry(shape, extrudeSettings);
-  const pos = wedgeGeo.attributes.position;
-  for (let i = 0; i < pos.count; i++) {
-    const x = pos.getX(i);
-    const y = pos.getY(i);
-    const z = pos.getZ(i);
-    pos.setXYZ(i, x, z, y);
-  }
-  pos.needsUpdate = true;
+  wedgeGeo.rotateX(-Math.PI / 2);
   wedgeGeo.computeVertexNormals();
 
   const wedgeMesh = new THREE.Mesh(wedgeGeo, aluminumRailMat);
@@ -493,11 +497,15 @@ function createCornerBouncerUnit(aluminumRailMat, reboundCushionMat) {
   group.add(wedgeMesh);
 
   // 45° Rebound Cushion facing the playfield
+  // Cushion face spans from (-cbSize, 0) to (0, -cbSize)
   const cushionLength = cbSize * Math.SQRT2; // ~0.212m
-  const cushionGeo = new THREE.BoxGeometry(cushionLength, railH * 0.75, 0.006);
+  const cushionThick = 0.006;
+  const cushionGeo = new THREE.BoxGeometry(cushionLength, railH * 0.75, cushionThick);
   const cushionMesh = new THREE.Mesh(cushionGeo, reboundCushionMat);
-  cushionMesh.rotation.y = -Math.PI / 4;
-  cushionMesh.position.set(-cbSize / 2 + 0.002, railH * 0.42, -cbSize / 2 + 0.002);
+  cushionMesh.rotation.y = Math.PI / 4;
+  // Offset slightly along inward normal (-1/sqrt2, -1/sqrt2) to guarantee zero Z-fighting with wedge
+  const offset = 0.001;
+  cushionMesh.position.set(-cbSize / 2 - offset * 0.7071, railH * 0.42, -cbSize / 2 - offset * 0.7071);
   cushionMesh.castShadow = true;
   cushionMesh.receiveShadow = true;
   group.add(cushionMesh);
@@ -506,8 +514,8 @@ function createCornerBouncerUnit(aluminumRailMat, reboundCushionMat) {
   const neonMat = new THREE.MeshBasicMaterial({ color: 0x00d4ff });
   const neonGeo = new THREE.BoxGeometry(cushionLength, 0.003, 0.004);
   const neonMesh = new THREE.Mesh(neonGeo, neonMat);
-  neonMesh.rotation.y = -Math.PI / 4;
-  neonMesh.position.set(-cbSize / 2 + 0.002, railH - 0.002, -cbSize / 2 + 0.002);
+  neonMesh.rotation.y = Math.PI / 4;
+  neonMesh.position.set(-cbSize / 2 - offset * 0.7071, railH - 0.002, -cbSize / 2 - offset * 0.7071);
   group.add(neonMesh);
 
   return group;
@@ -665,28 +673,28 @@ export function createAirHockeyTable() {
   northRightCushion.position.set(endRailCenterX, H + railH * 0.42, L / 2 - 0.003);
   tableGroup.add(northRightCushion);
 
-  // C. 4 45° Angled Corner Bouncers / Deflectors
+  // C. 4 45° Angled Corner Bouncers / Deflectors (Watertight geometric corner deflector units)
   // Corner 1: South-West (-X, -Z)
   const cornerSW = createCornerBouncerUnit(aluminumRailMat, reboundCushionMat);
-  cornerSW.scale.set(-1, 1, -1);
+  cornerSW.rotation.y = Math.PI;
   cornerSW.position.set(-W / 2, H, -L / 2);
   tableGroup.add(cornerSW);
 
   // Corner 2: South-East (+X, -Z)
   const cornerSE = createCornerBouncerUnit(aluminumRailMat, reboundCushionMat);
-  cornerSE.scale.set(1, 1, -1);
+  cornerSE.rotation.y = Math.PI / 2;
   cornerSE.position.set(W / 2, H, -L / 2);
   tableGroup.add(cornerSE);
 
   // Corner 3: North-East (+X, +Z)
   const cornerNE = createCornerBouncerUnit(aluminumRailMat, reboundCushionMat);
-  cornerNE.scale.set(1, 1, 1);
+  cornerNE.rotation.y = 0;
   cornerNE.position.set(W / 2, H, L / 2);
   tableGroup.add(cornerNE);
 
   // Corner 4: North-West (-X, +Z)
   const cornerNW = createCornerBouncerUnit(aluminumRailMat, reboundCushionMat);
-  cornerNW.scale.set(-1, 1, 1);
+  cornerNW.rotation.y = -Math.PI / 2;
   cornerNW.position.set(-W / 2, H, L / 2);
   tableGroup.add(cornerNW);
 
