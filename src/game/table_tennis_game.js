@@ -520,9 +520,9 @@ export class TableTennisGame {
           this.physics.ballBody.angularVelocity.set(0, 0, 0);
           this.physics.ballBody.collisionResponse = false;
 
-          // Strike serve requires paddle to be BEHIND the ball (p1Pos.z <= ballZ + 0.04)
+          // Strike serve requires paddle to be strictly BEHIND the ball (p1Pos.z < ballZ - 0.02)
           // and swinging FORWARD (+Z) with the FRONT face of the racket
-          const isBehindBall = p1Pos.z < ballZ + 0.04;
+          const isBehindBall = p1Pos.z < ballZ - 0.02;
           const isMovingForward = localPaddleTransform ? localPaddleTransform.velocity.z > 0.45 : false;
           const distToBall = Math.hypot(p1Pos.x - hoverX, p1Pos.y - (TABLE_HEIGHT + 0.22), p1Pos.z - ballZ);
           const isStrikeServe = isBehindBall && distToBall < 0.22 && isMovingForward;

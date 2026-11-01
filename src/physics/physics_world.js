@@ -130,9 +130,11 @@ export class PhysicsWorld {
       material: this.paddleMaterial,
       shape: p1Shape,
       position: new CANNON.Vec3(0, 0.95 + 0.082, -1.45),
+      collisionResponse: false, // Front-face swept strike detector handles all hits exclusively
     });
     this.paddle1Body.quaternion.setFromEuler(Math.PI / 2, 0, 0);
     this.paddle1Body.name = 'paddle1';
+    this.paddle1Body.collisionResponse = false;
     this.world.addBody(this.paddle1Body);
 
     const p2Shape = new CANNON.Cylinder(paddleRadius, paddleRadius, paddleThickness, 24);
@@ -141,9 +143,11 @@ export class PhysicsWorld {
       material: this.paddleMaterial,
       shape: p2Shape,
       position: new CANNON.Vec3(0, 0.95 + 0.082, 1.45),
+      collisionResponse: false,
     });
     this.paddle2Body.quaternion.setFromEuler(Math.PI / 2, 0, 0);
     this.paddle2Body.name = 'paddle2';
+    this.paddle2Body.collisionResponse = false;
     this.world.addBody(this.paddle2Body);
   }
 
@@ -177,47 +181,9 @@ export class PhysicsWorld {
           const side = bouncePos.z < 0 ? 1 : 2;
           this.callbacks.onBallBounceTable(bouncePos, side);
         }
-      } else if (targetName === 'paddle1') {
-        // Prevent back of racket from hitting the ball:
-        // Ball must be on FRONT face (+Z side of paddle1) and paddle not retreating backward
-        const dz = this.ballBody.position.z - this.paddle1Body.position.z;
-        const p1Vz = this.paddle1Body.velocity.z;
-        if (dz < -0.02 || p1Vz < -0.15) {
-          // Contact is on the back face of the racket -> ignore
-          return;
-        }
-
-        if (now - this.lastPaddleHitTime > 120) {
-          this.lastPaddleHitTime = now;
-          this.callbacks.onBallHitPaddle(1, this.paddle1Body.velocity.length());
-        }
-        // Physics guard: ensure ball travels forward towards opponent along straight line
-        if (this.ballBody.velocity.z < 1.0) {
-          this.ballBody.velocity.z = Math.max(2.8, Math.abs(this.ballBody.velocity.z) * 1.2);
-        }
-        this.ballBody.velocity.x = THREE.MathUtils.clamp(this.ballBody.velocity.x, -0.90, 0.90);
-        if (this.ballBody.velocity.y < 0.3) this.ballBody.velocity.y = 0.8;
-        this.ballBody.angularVelocity.set(0, 0, 0);
-      } else if (targetName === 'paddle2') {
-        // Prevent back of racket from hitting the ball:
-        // Ball must be on FRONT face (-Z side of paddle2) and paddle not retreating forward (+Z)
-        const dz = this.ballBody.position.z - this.paddle2Body.position.z;
-        const p2Vz = this.paddle2Body.velocity.z;
-        if (dz > 0.02 || p2Vz > 0.15) {
-          // Contact is on the back face of Player 2's racket -> ignore
-          return;
-        }
-
-        if (now - this.lastPaddleHitTime > 120) {
-          this.lastPaddleHitTime = now;
-          this.callbacks.onBallHitPaddle(2, this.paddle2Body.velocity.length());
-        }
-        if (this.ballBody.velocity.z > -1.0) {
-          this.ballBody.velocity.z = -Math.max(2.8, Math.abs(this.ballBody.velocity.z) * 1.2);
-        }
-        this.ballBody.velocity.x = THREE.MathUtils.clamp(this.ballBody.velocity.x, -0.90, 0.90);
-        if (this.ballBody.velocity.y < 0.3) this.ballBody.velocity.y = 0.8;
-        this.ballBody.angularVelocity.set(0, 0, 0);
+      } else if (targetName === 'paddle1' || targetName === 'paddle2') {
+        // Paddle hits are exclusively handled by checkContinuousStrikes for strict front-face realism
+        return;
       } else if (targetName === 'net') {
         this.callbacks.onBallHitNet();
       } else if (targetName === 'floor') {
@@ -276,9 +242,30 @@ export class PhysicsWorld {
       const dz = bPos.z - p1Pos.z;
       const dist2D = Math.hypot(dx, dy);
 
-      // Contact requires ball to hit the FRONT face (+Z side) of Player 1's racket:
-      // dz must be in [-0.02, 0.12] and racket must not be pulling backwards away from net (p1Vel.z >= -0.15)
-      const isFrontFaceContact = dz >= -0.02 && dz <= 0.12 && p1Vel.z >= -0.15;
+      // Contact requires ball to hit strictly the FRONT face (side facing the opponent +Z):
+      const yaw = p1Yaw || 0;
+      const normX = -Math.sin(yaw);
+      const normZ = Math.cos(yaw);
+      const distAlongNormal = dx * normX + dz * normZ;
+
+      const relVelX = bVel.x - p1Vel.x;
+      const relVelZ = bVel.z - p1Vel.z;
+      const closingSpeed = -(relVelX * normX + relVelZ * normZ);
+
+      // Strict Front-Face Only:
+      // 1. Ball must be in FRONT of the racket face (dz >= 0.005)
+      // 2. Ball must be on the front side of the angled plane (distAlongNormal >= 0.005)
+      // 3. Front face must be oriented towards opponent (normZ > 0.35)
+      // 4. Relative motion must be closing into front face (closingSpeed > 0.15)
+      // 5. Racket must NOT be retreating backward away from net (p1Vel.z >= -0.05)
+      const isFrontFaceContact = (
+        dz >= 0.005 &&
+        dz <= 0.15 &&
+        distAlongNormal >= 0.005 &&
+        normZ > 0.35 &&
+        closingSpeed > 0.15 &&
+        p1Vel.z >= -0.05
+      );
       if (isFrontFaceContact && dist2D < 0.14 && now - this.lastPaddleHitTime > 160) {
         this.lastPaddleHitTime = now;
 
@@ -337,9 +324,30 @@ export class PhysicsWorld {
       const dz = bPos.z - p2Pos.z;
       const dist2D = Math.hypot(dx, dy);
 
-      // Contact requires ball to hit the FRONT face (-Z side) of Player 2's racket:
-      // dz must be in [-0.12, 0.02] and racket must not be pulling backwards towards +Z (p2Vel.z <= 0.15)
-      const isFrontFaceContact = dz <= 0.02 && dz >= -0.12 && p2Vel.z <= 0.15;
+      // Contact requires ball to hit strictly the FRONT face (-Z side facing Player 1):
+      const yaw = p2Yaw || 0;
+      const normX = Math.sin(yaw);
+      const normZ = -Math.cos(yaw);
+      const distAlongNormal = dx * normX + dz * normZ;
+
+      const relVelX = bVel.x - p2Vel.x;
+      const relVelZ = bVel.z - p2Vel.z;
+      const closingSpeed = -(relVelX * normX + relVelZ * normZ);
+
+      // Strict Front-Face Only:
+      // 1. Ball must be in FRONT of Player 2's racket face (dz <= -0.005)
+      // 2. Ball must be on front side of angled plane (distAlongNormal >= 0.005)
+      // 3. Front face must be oriented towards Player 1 (normZ < -0.35)
+      // 4. Relative motion closing into front face (closingSpeed > 0.15)
+      // 5. Racket must NOT be pulling backwards towards +Z (p2Vel.z <= 0.05)
+      const isFrontFaceContact = (
+        dz <= -0.005 &&
+        dz >= -0.15 &&
+        distAlongNormal >= 0.005 &&
+        normZ < -0.35 &&
+        closingSpeed > 0.15 &&
+        p2Vel.z <= 0.05
+      );
       if (isFrontFaceContact && dist2D < 0.14 && now - this.lastPaddleHitTime > 160) {
         this.lastPaddleHitTime = now;
 

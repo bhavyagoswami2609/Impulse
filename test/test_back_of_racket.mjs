@@ -163,4 +163,31 @@ console.log('\n--- Test 3: Back of Racket Hit During Rally is Blocked ---');
   console.log(`✓ PASS: Valid front-face hit executed cleanly (vz = ${physics.ballBody.velocity.z.toFixed(2)} m/s)!`);
 }
 
+// =========================================================================
+// TEST 4: Direct Physical Overlap with Back of Paddle Never Bounces
+// =========================================================================
+console.log('\n--- Test 4: Physical Cylinder Overlap on Back Face Does NOT Bounce ---');
+{
+  let hitCount = 0;
+  const physics = new PhysicsWorld({
+    onBallHitPaddle: () => { hitCount++; },
+  });
+  physics.isInRally = true;
+  physics.lastPaddleHitTime = -1000;
+
+  // Ball is at Z = -1.22, paddle is at Z = -1.20 (ball overlaps the back face of the paddle)
+  physics.ballBody.position.set(0.0, 0.88, -1.22);
+  physics.ballBody.velocity.set(0.0, 0.0, -2.0); // moving towards -Z
+
+  const p1PosFront = new THREE.Vector3(0.0, 0.80, -1.20);
+  const p1VelRetreat = new THREE.Vector3(0.0, 0.0, -0.6); // moving backward
+
+  physics.updatePaddle1(p1PosFront, null, p1VelRetreat);
+  physics.step(0.016, p1PosFront, p1VelRetreat, 0, new THREE.Vector3(0, 0.8, 1.5), new THREE.Vector3(), 0, 0);
+
+  assert.strictEqual(hitCount, 0, 'Must NOT register a hit on back face overlap');
+  assert(physics.ballBody.velocity.z < -1.8, `Ball must continue traveling towards -Z without bouncing forward, got vz=${physics.ballBody.velocity.z}`);
+  console.log('✓ PASS: Physical overlap on back face passed cleanly through with zero bounce!');
+}
+
 console.log('\n=== ALL BACK OF RACKET & SERVE TESTS PASSED PERFECTLY! ===');
