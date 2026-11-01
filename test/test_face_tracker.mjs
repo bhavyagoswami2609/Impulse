@@ -9,17 +9,17 @@ console.log('=== RUNNING VERIFICATION TEST: FACE TRACKING & VR HEAD PARALLAX ===
 console.log('--- Test 1: FaceTracker Initialization & Toggles ---');
 {
   const tracker = new FaceTracker();
-  assert.strictEqual(tracker.enabled, false, 'FaceTracker should start disabled by default');
+  assert.strictEqual(tracker.enabled, true, 'FaceTracker should start enabled by default');
   assert.strictEqual(tracker.isTracking, false, 'FaceTracker should start with isTracking=false');
-
-  // Toggle ON
-  tracker.toggle();
-  assert.strictEqual(tracker.enabled, true, 'FaceTracker should be enabled after toggle()');
 
   // Toggle OFF
   tracker.toggle();
-  assert.strictEqual(tracker.enabled, false, 'FaceTracker should be disabled after second toggle()');
-  console.log('✓ FaceTracker starts optional (disabled by default) and toggles cleanly');
+  assert.strictEqual(tracker.enabled, false, 'FaceTracker should be disabled after first toggle()');
+
+  // Toggle ON
+  tracker.toggle();
+  assert.strictEqual(tracker.enabled, true, 'FaceTracker should be enabled after second toggle()');
+  console.log('✓ FaceTracker starts enabled by default and toggles cleanly');
 }
 
 // 2. Test Face Detection coordinate mapping and parallax calculations
@@ -62,25 +62,25 @@ console.log('\n--- Test 2: Face Detection Parallax Calculation & Clamping ---');
   assert(Math.abs(offset.x) < 0.05, `Offset at neutral should be near 0, got ${offset.x}`);
   console.log(`✓ Neutral center calibrated: offset = (${offset.x.toFixed(3)}, ${offset.y.toFixed(3)}, ${offset.z.toFixed(3)})`);
 
-  // Move head to the RIGHT (in camera feed, xCenter moves towards 0 -> rawX = 1 - xCenter = 0.70)
+  // Move head to the LEFT (in camera feed, xCenter moves towards 1 -> rawX = 0.70)
   for (let i = 0; i < 30; i++) {
-    offset = step(
-      { xCenter: 0.30, yCenter: 0.50, width: 0.22, height: 0.28 },
-      [{ x: 0.25, y: 0.45 }, { x: 0.35, y: 0.45 }, { x: 0.30, y: 0.52 }]
-    );
-  }
-  assert(offset.x > 0.15, `Moving head right must produce positive X parallax offset (got ${offset.x})`);
-  console.log(`✓ Moving head RIGHT: camera perspective shifts right by +${offset.x.toFixed(3)} m`);
-
-  // Move head to the LEFT (in camera feed, xCenter moves towards 1 -> rawX = 1 - xCenter = 0.30)
-  for (let i = 0; i < 40; i++) {
     offset = step(
       { xCenter: 0.70, yCenter: 0.50, width: 0.22, height: 0.28 },
       [{ x: 0.65, y: 0.45 }, { x: 0.75, y: 0.45 }, { x: 0.70, y: 0.52 }]
     );
   }
-  assert(offset.x < -0.15, `Moving head left must produce negative X parallax offset (got ${offset.x})`);
-  console.log(`✓ Moving head LEFT: camera perspective shifts left by ${offset.x.toFixed(3)} m`);
+  assert(offset.x > 0.15, `Moving head left must produce positive X parallax offset in unmirrored mode (got ${offset.x})`);
+  console.log(`✓ Moving head LEFT: camera perspective shifts left by +${offset.x.toFixed(3)} m`);
+
+  // Move head to the RIGHT (in camera feed, xCenter moves towards 0 -> rawX = 0.30)
+  for (let i = 0; i < 40; i++) {
+    offset = step(
+      { xCenter: 0.30, yCenter: 0.50, width: 0.22, height: 0.28 },
+      [{ x: 0.25, y: 0.45 }, { x: 0.35, y: 0.45 }, { x: 0.30, y: 0.52 }]
+    );
+  }
+  assert(offset.x < -0.15, `Moving head right must produce negative X parallax offset in unmirrored mode (got ${offset.x})`);
+  console.log(`✓ Moving head RIGHT: camera perspective shifts right by ${offset.x.toFixed(3)} m`);
 
   // Move head UP (in camera feed, yCenter moves towards 0 -> rawY = 1 - yCenter = 0.75)
   for (let i = 0; i < 40; i++) {

@@ -182,57 +182,45 @@ async function main() {
       console.log(`  ✓ ${k} element present`);
     }
 
-    // Test 2: Initial Face Tracker status
+    // Test 2: Initial Face Tracker status (turned ON by default)
     const initialVrState = await client.evaluate(`({
       enabled: window.gameApp.faceTracker.enabled,
       btnText: document.getElementById('facetrack-btn-text')?.textContent,
       hasClass: document.getElementById('btn-toggle-facetrack')?.classList.contains('vr-active')
     })`);
-    assert.strictEqual(initialVrState.enabled, false, 'Face tracking must start disabled by default');
-    assert.strictEqual(initialVrState.btnText, 'HEAD VR: OFF', 'Button text must be HEAD VR: OFF');
-    assert.strictEqual(initialVrState.hasClass, false, 'Button should not have vr-active initially');
-    console.log('✓ Initial state verified: HEAD VR is OFF (optional by default)');
+    assert.strictEqual(initialVrState.enabled, true, 'Face tracking must start enabled by default');
+    assert.strictEqual(initialVrState.btnText, 'HEAD VR: ON', 'Button text must be HEAD VR: ON');
+    assert.strictEqual(initialVrState.hasClass, true, 'Button should have vr-active glowing style initially');
+    console.log('✓ Initial state verified: HEAD VR is ON by default');
 
-    // Test 3: Click Face Track button
-    console.log('--- Testing Face Tracking Toggle via Button Click ---');
+    // Test 3: Click Face Track button to toggle OFF
+    console.log('--- Testing Face Tracking Toggle OFF via Button Click ---');
     await client.evaluate(`document.getElementById('btn-toggle-facetrack').click()`);
-    
-    // Wait for async toggle to resolve
-    let toggledVrState;
-    for (let i = 0; i < 20; i++) {
-      await wait(200);
-      toggledVrState = await client.evaluate(`({
-        enabled: window.gameApp.faceTracker.enabled,
-        isStarting: window.gameApp.faceTracker.isStarting,
-        hasFaceDetection: typeof window.FaceDetection,
-        btnText: document.getElementById('facetrack-btn-text')?.textContent,
-        hasClass: document.getElementById('btn-toggle-facetrack')?.classList.contains('vr-active')
-      })`);
-      if (toggledVrState.enabled) break;
-    }
-    console.log('Face tracker state after toggle:', toggledVrState);
-    assert.strictEqual(toggledVrState.enabled, true, 'Face tracking should be enabled after click');
-    assert.strictEqual(toggledVrState.btnText, 'HEAD VR: ON', 'Button text should update to HEAD VR: ON');
-    assert.strictEqual(toggledVrState.hasClass, true, 'Button should have vr-active glowing style');
-    console.log('✓ Button click successfully activated HEAD VR: ON with glowing style');
-
-    // Test 4: Toggle via Keyboard shortcut 'F'
-    console.log('--- Testing Face Tracking Toggle via Keyboard Shortcut F ---');
-    await client.evaluate(`window.dispatchEvent(new KeyboardEvent('keydown', { key: 'f', code: 'KeyF' }))`);
-    await wait(200);
+    await wait(250);
 
     const toggledOffState = await client.evaluate(`({
       enabled: window.gameApp.faceTracker.enabled,
       btnText: document.getElementById('facetrack-btn-text')?.textContent,
       hasClass: document.getElementById('btn-toggle-facetrack')?.classList.contains('vr-active')
     })`);
-    assert.strictEqual(toggledOffState.enabled, false, 'Face tracking should toggle OFF via key F');
-    assert.strictEqual(toggledOffState.btnText, 'HEAD VR: OFF');
-    console.log("✓ Keyboard shortcut 'F' successfully toggled HEAD VR: OFF");
+    assert.strictEqual(toggledOffState.enabled, false, 'Face tracking should be disabled after click');
+    assert.strictEqual(toggledOffState.btnText, 'HEAD VR: OFF', 'Button text should update to HEAD VR: OFF');
+    assert.strictEqual(toggledOffState.hasClass, false, 'Button should remove vr-active style');
+    console.log('✓ Button click successfully toggled HEAD VR: OFF');
 
-    // Re-enable for subsequent checks
-    await client.evaluate(`window.dispatchEvent(new KeyboardEvent('keydown', { key: 'F', code: 'KeyF' }))`);
-    await wait(200);
+    // Test 4: Toggle back ON via Keyboard shortcut 'F'
+    console.log('--- Testing Face Tracking Toggle ON via Keyboard Shortcut F ---');
+    await client.evaluate(`window.dispatchEvent(new KeyboardEvent('keydown', { key: 'f', code: 'KeyF' }))`);
+    await wait(250);
+
+    const toggledOnState = await client.evaluate(`({
+      enabled: window.gameApp.faceTracker.enabled,
+      btnText: document.getElementById('facetrack-btn-text')?.textContent,
+      hasClass: document.getElementById('btn-toggle-facetrack')?.classList.contains('vr-active')
+    })`);
+    assert.strictEqual(toggledOnState.enabled, true, 'Face tracking should toggle back ON via key F');
+    assert.strictEqual(toggledOnState.btnText, 'HEAD VR: ON');
+    console.log("✓ Keyboard shortcut 'F' successfully toggled HEAD VR back ON");
 
     // Test 5: Neutral Calibration Lock 'C' and button
     console.log('--- Testing Neutral Center Calibration Lock ---');

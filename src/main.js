@@ -440,6 +440,7 @@ class TableTennisApp {
       chkInvertX.checked = this.tracker.invertX;
       chkInvertX.addEventListener('change', (e) => {
         this.tracker.invertX = e.target.checked;
+        if (this.faceTracker) this.faceTracker.invertX = e.target.checked;
         if (webcamCanvas) webcamCanvas.classList.toggle('mirrored', this.tracker.invertX);
         this.syncHUD();
       });

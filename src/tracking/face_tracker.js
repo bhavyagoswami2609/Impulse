@@ -46,7 +46,8 @@ export class FaceTracker {
     this.canvasElement = options.canvasElement || null;
     this.onStatusChange = options.onStatusChange || null;
 
-    this.enabled = false;
+    this.enabled = options.enabled !== undefined ? options.enabled : true;
+    this.invertX = options.invertX !== undefined ? options.invertX : false; // Default unmirrored as requested
     this.isTracking = false;
     this.isStarting = false;
     this.lastDetectedTime = 0;
@@ -287,8 +288,8 @@ export class FaceTracker {
       this.lastDetectedTime = now;
       this.useMouseFallback = false;
 
-      // In camera feed, mirror X so moving head to your right moves target right
-      const rawX = 1.0 - box.xCenter;
+      // Horizontal head position (unmirrored by default so moving head left shifts perspective left)
+      const rawX = this.invertX ? (1.0 - box.xCenter) : box.xCenter;
       // In camera feed, Y=0 is top, Y=1 is bottom; moving head UP should be positive
       const rawY = 1.0 - box.yCenter;
       // Box width / eye distance represents depth (closer = larger box)
@@ -337,7 +338,7 @@ export class FaceTracker {
   setNeutralCenter() {
     if (this.latestFaceBox) {
       this.neutralCenter = {
-        x: 1.0 - this.latestFaceBox.xCenter,
+        x: this.invertX ? (1.0 - this.latestFaceBox.xCenter) : this.latestFaceBox.xCenter,
         y: 1.0 - this.latestFaceBox.yCenter,
         size: this.latestFaceBox.width,
       };
@@ -366,8 +367,9 @@ export class FaceTracker {
     }
 
     if (this.useMouseFallback && (!this.isTracking || !this.faceDetected)) {
-      // Subtle mouse fallback preview when webcam is not tracking
-      const mouseX = THREE.MathUtils.clamp(this.mouseNormalized.x * 0.28, -this.maxOffsetX, this.maxOffsetX);
+      // Subtle mouse fallback preview when webcam is not tracking (unmirrored to match head tracking)
+      const mouseFactor = this.invertX ? 0.28 : -0.28;
+      const mouseX = THREE.MathUtils.clamp(this.mouseNormalized.x * mouseFactor, -this.maxOffsetX, this.maxOffsetX);
       const mouseY = THREE.MathUtils.clamp(this.mouseNormalized.y * 0.16, -this.maxOffsetY, this.maxOffsetY);
       this.targetOffset.set(mouseX, mouseY, 0);
     }
@@ -391,8 +393,8 @@ export class FaceTracker {
     if (!this.enabled || !this.faceDetected || !this.latestFaceBox) return;
 
     const box = this.latestFaceBox;
-    // Mirrored coordinates matching PIP canvas
-    const x = (1.0 - (box.xCenter + box.width / 2)) * width;
+    // Bounding box matching PIP canvas coordinates
+    const x = (box.xCenter - box.width / 2) * width;
     const y = (box.yCenter - box.height / 2) * height;
     const w = box.width * width;
     const h = box.height * height;
@@ -438,7 +440,7 @@ export class FaceTracker {
     // 2. Center Crosshairs on Nose / Eyes
     if (this.latestLandmarks && this.latestLandmarks.length >= 3) {
       const nose = this.latestLandmarks[2];
-      const nx = (1.0 - nose.x) * width;
+      const nx = nose.x * width;
       const ny = nose.y * height;
 
       ctx.strokeStyle = 'rgba(0, 229, 255, 0.85)';
