@@ -182,13 +182,13 @@ export class PhysicsWorld {
           this.lastPaddleHitTime = now;
           this.callbacks.onBallHitPaddle(1, this.paddle1Body.velocity.length());
         }
-        // Physics guard: ensure ball always travels forward towards opponent and never shoots wildly sideways
+        // Physics guard: ensure ball travels forward towards opponent along straight line
         if (this.ballBody.velocity.z < 1.0) {
           this.ballBody.velocity.z = Math.max(2.8, Math.abs(this.ballBody.velocity.z) * 1.2);
         }
-        const toCenterX = -this.ballBody.position.x * 0.65;
-        this.ballBody.velocity.x = THREE.MathUtils.clamp(toCenterX, -0.75, 0.75);
+        this.ballBody.velocity.x = THREE.MathUtils.clamp(this.ballBody.velocity.x, -0.90, 0.90);
         if (this.ballBody.velocity.y < 0.3) this.ballBody.velocity.y = 0.8;
+        this.ballBody.angularVelocity.set(0, 0, 0);
       } else if (targetName === 'paddle2') {
         if (now - this.lastPaddleHitTime > 120) {
           this.lastPaddleHitTime = now;
@@ -197,9 +197,9 @@ export class PhysicsWorld {
         if (this.ballBody.velocity.z > -1.0) {
           this.ballBody.velocity.z = -Math.max(2.8, Math.abs(this.ballBody.velocity.z) * 1.2);
         }
-        const toCenterX = -this.ballBody.position.x * 0.65;
-        this.ballBody.velocity.x = THREE.MathUtils.clamp(toCenterX, -0.75, 0.75);
+        this.ballBody.velocity.x = THREE.MathUtils.clamp(this.ballBody.velocity.x, -0.90, 0.90);
         if (this.ballBody.velocity.y < 0.3) this.ballBody.velocity.y = 0.8;
+        this.ballBody.angularVelocity.set(0, 0, 0);
       } else if (targetName === 'net') {
         this.callbacks.onBallHitNet();
       } else if (targetName === 'floor') {
@@ -271,28 +271,38 @@ export class PhysicsWorld {
         const flightTime = Math.max(0.35, (targetZLand - bPos.z) / returnVz);
         const deltaY = TABLE_HEIGHT - bPos.y;
         const calculatedVy = (deltaY - 0.5 * g * flightTime * flightTime) / flightTime;
-        // Low, crisp trajectory clearing the net (0.9125m) without ballooning upwards
-        const returnVy = THREE.MathUtils.clamp(calculatedVy, 0.72, 0.92);
+        // Ensure clean net clearance (> 3.5cm over the net tape at Z=0)
+        const tNet = Math.max(0.1, -bPos.z / returnVz);
+        const minNetClearanceY = TABLE_HEIGHT + NET_HEIGHT + BALL_RADIUS + 0.035;
+        const minVyForNet = (minNetClearanceY - bPos.y - 0.5 * g * tNet * tNet) / tNet;
+        const returnVy = THREE.MathUtils.clamp(Math.max(calculatedVy, minVyForNet), 0.80, 1.05);
 
-        // Targeted aim on opponent's court:
-        // When facing opponent (yaw ~ 0), steering is neutral.
-        // Even with steering, the target landing X is strictly clamped within the opponent's table half:
-        const maxCourtX = (TABLE_WIDTH / 2) * 0.70; // ~0.533m (well inside 0.7625m table half-width)
+        // Realistic Angled Strike Physics (Linear straight-line trajectories):
+        // 1. Paddle face yaw angle (in radians: positive = right, negative = left)
         const yaw = p1Yaw || 0;
-        const steerX = Math.sin(yaw) * 0.35 + THREE.MathUtils.clamp(p1Vel.x * 0.12, -0.22, 0.22);
-        const targetAimX = THREE.MathUtils.clamp(bPos.x * 0.20 + steerX, -maxCourtX, maxCourtX);
-        const returnVx = THREE.MathUtils.clamp(
-          (targetAimX - bPos.x) / flightTime,
-          -1.1,
-          1.1
-        );
+        // 2. Horizontal swing swipe direction
+        const swingSwipeAngle = Math.atan2(p1Vel.x, Math.max(1.8, swingForward + 1.8));
+        // 3. Contact offset on the paddle blade (dx = bPos.x - p1Pos.x)
+        const contactOffsetAngle = THREE.MathUtils.clamp(dx / 0.095, -1, 1) * 0.18;
+
+        // Combined physical launch angle
+        const launchAngle = yaw * 1.15 + swingSwipeAngle * 0.70 + contactOffsetAngle;
+
+        // Straight-line trajectory along launchAngle:
+        const distZ = targetZLand - bPos.z;
+        const projectedX = bPos.x + distZ * Math.tan(launchAngle);
+
+        // Playable table limits: allow hitting anywhere across the court up to the outer white lines
+        const maxCourtX = (TABLE_WIDTH / 2) * 0.92; // 0.70m (table half-width is 0.7625m)
+        const targetAimX = THREE.MathUtils.clamp(projectedX, -maxCourtX, maxCourtX);
+
+        // Horizontal velocity travels in a direct, laser-straight line to targetAimX
+        const returnVx = (targetAimX - bPos.x) / flightTime;
 
         bVel.set(returnVx, returnVy, returnVz);
 
-        // Sidespin & topspin
-        const spinY = yaw * 14.0 - p1Vel.x * 5.0;
-        const spinX = 3.0 + swingForward * 4.0;
-        this.ballBody.angularVelocity.set(spinX, spinY, 0);
+        // Zero spin for pure, laser-straight flight without mid-air curving
+        this.ballBody.angularVelocity.set(0, 0, 0);
 
         this.callbacks.onBallHitPaddle(1, Math.max(1.0, swingForward));
         return;
@@ -320,23 +330,22 @@ export class PhysicsWorld {
         const flightTime = Math.max(0.35, (targetZLand - bPos.z) / returnVz);
         const deltaY = TABLE_HEIGHT - bPos.y;
         const calculatedVy = (deltaY - 0.5 * g * flightTime * flightTime) / flightTime;
-        // Low, crisp trajectory clearing the net (0.9125m) without ballooning upwards
-        const returnVy = THREE.MathUtils.clamp(calculatedVy, 0.72, 0.92);
+        // Ensure clean net clearance (> 3.5cm over the net tape at Z=0)
+        const tNet = Math.max(0.1, bPos.z / Math.abs(returnVz));
+        const minNetClearanceY = TABLE_HEIGHT + NET_HEIGHT + BALL_RADIUS + 0.035;
+        const minVyForNet = (minNetClearanceY - bPos.y - 0.5 * g * tNet * tNet) / tNet;
+        const returnVy = THREE.MathUtils.clamp(Math.max(calculatedVy, minVyForNet), 0.80, 1.05);
 
-        // CPU strategic placement: aim towards targetAimX clamped inside court
-        const maxCourtX = (TABLE_WIDTH / 2) * 0.70; // ~0.533m
-        const rawAimX = p2AimX !== undefined ? p2AimX : (Math.random() > 0.5 ? 0.32 : -0.32);
+        // CPU strategic placement: aim towards targetAimX across court in straight line
+        const maxCourtX = (TABLE_WIDTH / 2) * 0.88; // ~0.67m
+        const rawAimX = p2AimX !== undefined ? p2AimX : (Math.random() > 0.5 ? 0.38 : -0.38);
         const targetAimX = THREE.MathUtils.clamp(rawAimX, -maxCourtX, maxCourtX);
-        const returnVx = THREE.MathUtils.clamp(
-          (targetAimX - bPos.x) / flightTime,
-          -1.0,
-          1.0
-        );
+        const returnVx = (targetAimX - bPos.x) / flightTime;
 
         bVel.set(returnVx, returnVy, returnVz);
 
-        const cpuSpinY = -returnVx * 4.5;
-        this.ballBody.angularVelocity.set(3.5, cpuSpinY, 0);
+        // Zero spin for pure, laser-straight flight
+        this.ballBody.angularVelocity.set(0, 0, 0);
 
         this.callbacks.onBallHitPaddle(2, Math.max(1.0, swingForward));
       }
@@ -344,23 +353,11 @@ export class PhysicsWorld {
   }
 
   applyMagnusEffect() {
-    const v = this.ballBody.velocity;
-    const w = this.ballBody.angularVelocity;
-
-    const cx = w.y * v.z - w.z * v.y;
-    const cy = w.z * v.x - w.x * v.z;
-    const cz = w.x * v.y - w.y * v.x;
-
-    const magnusCoeff = 0.0006;
-    this.ballBody.applyForce(
-      new CANNON.Vec3(cx * magnusCoeff, cy * magnusCoeff, cz * magnusCoeff),
-      this.ballBody.position
-    );
+    // Disabled: table tennis ball travels in pure, straight lines without mid-air curving
   }
 
   step(deltaTime, p1Pos, p1Vel, p1Yaw, p2Pos, p2Vel, p2Yaw, p2AimX) {
     if (this.isInRally) {
-      this.applyMagnusEffect();
       this.checkContinuousStrikes(p1Pos, p1Vel, p1Yaw, p2Pos, p2Vel, p2Yaw, p2AimX);
 
       // Height safety: clamp maximum ball height so it never balloons into the ceiling
@@ -404,12 +401,12 @@ export class PhysicsWorld {
       // P1 serves towards +Z
       this.ballBody.position.set(startX, 0.98, -1.25);
       this.ballBody.velocity.set(targetVx, vy, paceVz);
-      this.ballBody.angularVelocity.set(2.0, spinY, 0);
+      this.ballBody.angularVelocity.set(0, 0, 0);
     } else {
       // CPU serves towards -Z
       this.ballBody.position.set(startX, 0.98, 1.25);
       this.ballBody.velocity.set(targetVx, vy, -paceVz);
-      this.ballBody.angularVelocity.set(2.0, spinY, 0);
+      this.ballBody.angularVelocity.set(0, 0, 0);
     }
 
     // Reset collision debounces

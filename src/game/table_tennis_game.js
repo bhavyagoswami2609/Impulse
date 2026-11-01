@@ -335,9 +335,8 @@ export class TableTennisGame {
       // Guaranteed powerful legal serve arc clearing the net by > 12cm
       const paceVz = THREE.MathUtils.clamp(2.75 + Math.max(0, p1Vel.z) * 0.25, 2.75, 3.10);
       const vy = -0.66;
-      const spinY = -targetVx * 5.0; // Magnus curve
 
-      this.physics.serveBall(1, { startX, targetVx, paceVz, vy, spinY });
+      this.physics.serveBall(1, { startX, targetVx, paceVz, vy });
 
       let dirDesc = 'CENTER';
       if (targetVx < -0.2) dirDesc = 'CROSS-RIGHT';
@@ -345,13 +344,12 @@ export class TableTennisGame {
       this.onActionToast(`P1 SERVE: ${dirDesc}`);
     } else {
       // CPU Tactical Serves:
-      // Calibrated kinematics ensuring initial bounce on CPU side,
-      // high parabolic arc clearing net by > 12cm, and second bounce deep in receiver territory
+      // Direct straight-line trajectories along tactical angles
       const cpuServes = [
-        { name: 'CROSS FOREHAND', startX: -0.22, targetVx: 0.35, paceVz: 2.75, vy: -0.66, spinY: -4.0 },
-        { name: 'CROSS BACKHAND', startX: 0.22, targetVx: -0.35, paceVz: 2.75, vy: -0.66, spinY: 4.0 },
-        { name: 'POWER DRIVE', startX: 0.0, targetVx: 0.0, paceVz: 2.80, vy: -0.68, spinY: 0 },
-        { name: 'CURVING SLICE', startX: 0.16, targetVx: -0.25, paceVz: 2.70, vy: -0.65, spinY: 6.0 },
+        { name: 'CROSS FOREHAND', startX: -0.22, targetVx: 0.35, paceVz: 2.75, vy: -0.66 },
+        { name: 'CROSS BACKHAND', startX: 0.22, targetVx: -0.35, paceVz: 2.75, vy: -0.66 },
+        { name: 'POWER DRIVE', startX: 0.0, targetVx: 0.0, paceVz: 2.80, vy: -0.68 },
+        { name: 'FAST ANGLE', startX: 0.16, targetVx: -0.25, paceVz: 2.70, vy: -0.65 },
       ];
       const choice = cpuServes[Math.floor(Math.random() * cpuServes.length)];
       this.physics.serveBall(2, choice);
