@@ -89,6 +89,15 @@ export class TableTennisGame {
       this.bouncesP2++;
     }
 
+    // Scoring rule: A point is awarded if there are more than two bounces on the same side
+    if (this.bouncesP1 > 2) {
+      this.awardPoint(2, this.isServiceInProgress ? 'FAULT' : '3 BOUNCES');
+      return;
+    } else if (this.bouncesP2 > 2) {
+      this.awardPoint(1, this.isServiceInProgress ? 'FAULT' : '3 BOUNCES');
+      return;
+    }
+
     // Progress serve state: when ball bounces on server side and receiver side without net clip, serve is complete
     if (this.isServiceInProgress) {
       if (this.server === 1) {
@@ -103,8 +112,6 @@ export class TableTennisGame {
         }
       }
     }
-    // IMPORTANT: No points are awarded while the ball is still bouncing on the table!
-    // Points are strictly awarded ONLY when the ball physically leaves the table.
   }
 
   handlePaddleHit(player, speed) {

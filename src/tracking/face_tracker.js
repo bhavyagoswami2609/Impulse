@@ -1,57 +1,39 @@
 import * as THREE from 'three';
 import { OneEuroFilter } from './hand_tracker.js';
 
-let isolatedIframe = null;
-
 /**
- * Loads MediaPipe FaceDetection inside a dedicated isolated iframe sandbox.
- * This completely isolates its Emscripten WASM and memory file system from
- * MediaPipe Hands on the main window, preventing data file collisions or buffer corruption.
+ * Dynamically loads MediaPipe FaceDetection onto the main window after Hands is initialized.
+ * Ensures zero Emscripten collisions and seamless native WebGL GPU hardware acceleration.
  */
-export async function getIsolatedFaceDetectionClass() {
-  if (typeof window === 'undefined') return null;
-  if (typeof window.FaceDetection !== 'undefined') return window.FaceDetection;
-
-  if (!isolatedIframe && typeof document !== 'undefined') {
-    isolatedIframe = document.createElement('iframe');
-    isolatedIframe.id = 'face-detection-sandbox-frame';
-    isolatedIframe.style.display = 'none';
-    document.body.appendChild(isolatedIframe);
-  }
-
-  const iframeWin = isolatedIframe ? isolatedIframe.contentWindow : null;
-  if (iframeWin && iframeWin.FaceDetection) {
-    return iframeWin.FaceDetection;
-  }
-
-  if (!isolatedIframe || !iframeWin) return null;
+export async function ensureFaceDetectionLibrary() {
+  if (typeof window === 'undefined') return false;
+  if (typeof window.FaceDetection !== 'undefined') return true;
 
   return new Promise((resolve) => {
-    const iframeDoc = isolatedIframe.contentDocument || iframeWin.document;
-    const existing = iframeDoc.querySelector('script[data-face-detect]');
+    const existing = document.querySelector('script[data-face-detect]');
     if (existing) {
-      if (iframeWin.FaceDetection) return resolve(iframeWin.FaceDetection);
-      existing.addEventListener('load', () => resolve(iframeWin.FaceDetection || null));
-      existing.addEventListener('error', () => resolve(null));
+      if (window.FaceDetection) return resolve(true);
+      existing.addEventListener('load', () => resolve(true));
+      existing.addEventListener('error', () => resolve(false));
       return;
     }
 
-    const script = iframeDoc.createElement('script');
+    const script = document.createElement('script');
     script.setAttribute('data-face-detect', 'true');
     script.src = 'https://cdn.jsdelivr.net/npm/@mediapipe/face_detection/face_detection.js';
     script.crossOrigin = 'anonymous';
-    script.onload = () => resolve(iframeWin.FaceDetection || null);
-    script.onerror = () => resolve(null);
-    iframeDoc.head.appendChild(script);
+    script.onload = () => resolve(true);
+    script.onerror = () => resolve(false);
+    document.head.appendChild(script);
   });
 }
 
 /**
- * Legacy loader check for backward-compatibility or direct window access
+ * Legacy loader alias
  */
-export async function ensureFaceDetectionLibrary() {
-  const cls = await getIsolatedFaceDetectionClass();
-  return Boolean(cls);
+export async function getIsolatedFaceDetectionClass() {
+  const ready = await ensureFaceDetectionLibrary();
+  return (ready && typeof window !== 'undefined') ? window.FaceDetection : null;
 }
 
 /**
@@ -183,8 +165,8 @@ export class FaceTracker {
     this.isStarting = true;
 
     try {
-      const FaceDetectionClass = await getIsolatedFaceDetectionClass();
-      if (!FaceDetectionClass) {
+      const ready = await ensureFaceDetectionLibrary();
+      if (!ready || typeof window.FaceDetection === 'undefined') {
         console.warn('MediaPipe FaceDetection library could not be loaded, using mouse fallback');
         this.useMouseFallback = true;
         this.isStarting = false;
@@ -192,11 +174,11 @@ export class FaceTracker {
       }
 
       if (!this.faceDetection) {
-        this.faceDetection = new FaceDetectionClass({
+        this.faceDetection = new window.FaceDetection({
           locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/face_detection/${file}`,
         });
 
-        this.faceDetection.setOptions({
+        await this.faceDetection.setOptions({
           model: 'short', // 0-2m desktop distance
           minDetectionConfidence: 0.5,
         });
@@ -239,6 +221,7 @@ export class FaceTracker {
       if (
         this.videoElement &&
         this.videoElement.readyState >= 2 &&
+        this.videoElement.videoWidth > 0 &&
         now - this.lastFrameTime >= this.frameIntervalMs
       ) {
         if (!isProcessing && this.faceDetection) {
@@ -247,7 +230,7 @@ export class FaceTracker {
           try {
             await this.faceDetection.send({ image: this.videoElement });
           } catch (err) {
-            // Ignore temporary frame send errors during camera transitions
+            console.warn('Face tracking frame send error:', err);
           } finally {
             isProcessing = false;
           }

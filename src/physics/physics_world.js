@@ -171,7 +171,7 @@ export class PhysicsWorld {
 
       if (targetName === 'table') {
         const vy = Math.abs(this.ballBody.velocity.y);
-        if (vy > 0.28 && now - this.lastTableBounceTime > 190) {
+        if (vy > 0.28 && now - this.lastTableBounceTime > 220) {
           this.lastTableBounceTime = now;
           const bouncePos = this.ballBody.position;
           const side = bouncePos.z < 0 ? 1 : 2;
@@ -182,11 +182,24 @@ export class PhysicsWorld {
           this.lastPaddleHitTime = now;
           this.callbacks.onBallHitPaddle(1, this.paddle1Body.velocity.length());
         }
+        // Physics guard: ensure ball always travels forward towards opponent and never shoots wildly sideways
+        if (this.ballBody.velocity.z < 1.0) {
+          this.ballBody.velocity.z = Math.max(2.8, Math.abs(this.ballBody.velocity.z) * 1.2);
+        }
+        const toCenterX = -this.ballBody.position.x * 0.65;
+        this.ballBody.velocity.x = THREE.MathUtils.clamp(toCenterX, -0.75, 0.75);
+        if (this.ballBody.velocity.y < 0.3) this.ballBody.velocity.y = 0.8;
       } else if (targetName === 'paddle2') {
         if (now - this.lastPaddleHitTime > 120) {
           this.lastPaddleHitTime = now;
           this.callbacks.onBallHitPaddle(2, this.paddle2Body.velocity.length());
         }
+        if (this.ballBody.velocity.z > -1.0) {
+          this.ballBody.velocity.z = -Math.max(2.8, Math.abs(this.ballBody.velocity.z) * 1.2);
+        }
+        const toCenterX = -this.ballBody.position.x * 0.65;
+        this.ballBody.velocity.x = THREE.MathUtils.clamp(toCenterX, -0.75, 0.75);
+        if (this.ballBody.velocity.y < 0.3) this.ballBody.velocity.y = 0.8;
       } else if (targetName === 'net') {
         this.callbacks.onBallHitNet();
       } else if (targetName === 'floor') {
@@ -253,14 +266,6 @@ export class PhysicsWorld {
         // Dynamic, responsive return pace (2.8 to 4.0 m/s)
         const returnVz = THREE.MathUtils.clamp(2.8 + swingForward * 0.55, 2.8, 4.0);
 
-        // Y-axis yaw angle steering + paddle lateral movement
-        const yaw = p1Yaw || 0;
-        const returnVx = THREE.MathUtils.clamp(
-          Math.sin(yaw) * returnVz * 0.85 + p1Vel.x * 0.25,
-          -1.1,
-          1.1
-        );
-
         // Kinematic return arc: target landing cleanly on opponent's half (zLand = 0.75m)
         const targetZLand = 0.75;
         const flightTime = Math.max(0.35, (targetZLand - bPos.z) / returnVz);
@@ -268,6 +273,19 @@ export class PhysicsWorld {
         const calculatedVy = (deltaY - 0.5 * g * flightTime * flightTime) / flightTime;
         // Low, crisp trajectory clearing the net (0.9125m) without ballooning upwards
         const returnVy = THREE.MathUtils.clamp(calculatedVy, 0.72, 0.92);
+
+        // Targeted aim on opponent's court:
+        // When facing opponent (yaw ~ 0), steering is neutral.
+        // Even with steering, the target landing X is strictly clamped within the opponent's table half:
+        const maxCourtX = (TABLE_WIDTH / 2) * 0.70; // ~0.533m (well inside 0.7625m table half-width)
+        const yaw = p1Yaw || 0;
+        const steerX = Math.sin(yaw) * 0.35 + THREE.MathUtils.clamp(p1Vel.x * 0.12, -0.22, 0.22);
+        const targetAimX = THREE.MathUtils.clamp(bPos.x * 0.20 + steerX, -maxCourtX, maxCourtX);
+        const returnVx = THREE.MathUtils.clamp(
+          (targetAimX - bPos.x) / flightTime,
+          -1.1,
+          1.1
+        );
 
         bVel.set(returnVx, returnVy, returnVz);
 
@@ -305,11 +323,12 @@ export class PhysicsWorld {
         // Low, crisp trajectory clearing the net (0.9125m) without ballooning upwards
         const returnVy = THREE.MathUtils.clamp(calculatedVy, 0.72, 0.92);
 
-        // CPU strategic placement: aim towards targetAimX across court
-        const targetAimX = p2AimX !== undefined ? p2AimX : (Math.random() > 0.5 ? 0.38 : -0.38);
-        const yaw2 = p2Yaw || 0;
+        // CPU strategic placement: aim towards targetAimX clamped inside court
+        const maxCourtX = (TABLE_WIDTH / 2) * 0.70; // ~0.533m
+        const rawAimX = p2AimX !== undefined ? p2AimX : (Math.random() > 0.5 ? 0.32 : -0.32);
+        const targetAimX = THREE.MathUtils.clamp(rawAimX, -maxCourtX, maxCourtX);
         const returnVx = THREE.MathUtils.clamp(
-          (targetAimX - bPos.x) / flightTime + Math.sin(yaw2) * 0.4,
+          (targetAimX - bPos.x) / flightTime,
           -1.0,
           1.0
         );
@@ -417,7 +436,8 @@ export class PhysicsWorld {
   smashBall(player) {
     const dirZ = player === 1 ? 4.6 : -4.6;
     // Smashes drive flat, fast, and aggressively into the opponent's table half
-    this.ballBody.velocity.set(this.ballBody.velocity.x * 0.3, 0.20, dirZ);
+    const clampedVx = THREE.MathUtils.clamp(this.ballBody.velocity.x * 0.25, -0.5, 0.5);
+    this.ballBody.velocity.set(clampedVx, 0.20, dirZ);
     // Heavy topspin drives the ball down onto the table
     this.ballBody.angularVelocity.set(player === 1 ? 8.0 : -8.0, 0, 0);
   }

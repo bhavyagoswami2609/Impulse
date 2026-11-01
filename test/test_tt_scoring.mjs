@@ -71,9 +71,9 @@ function createMockGame() {
 }
 
 // =========================================================================
-// TEST 1: Multiple bounces on table NEVER award points while ball is on table
+// TEST 1: Point is awarded ONLY when ball leaves table OR > 2 bounces on same side
 // =========================================================================
-console.log('--- Test 1: Bounces on Table Do NOT Award Points ---');
+console.log('--- Test 1: Bounces on Table: Play Continues up to 2, Point on > 2 ---');
 {
   const { game, physics, toasts } = createMockGame();
   game.state = GAME_STATES.RALLY;
@@ -83,17 +83,23 @@ console.log('--- Test 1: Bounces on Table Do NOT Award Points ---');
   // Ball is on the table (y = TABLE_HEIGHT, within bounds)
   physics.ballBody.position.set(0.1, TABLE_HEIGHT, 0.5);
 
-  // Simulate 5 bounces on player 2's side
-  for (let i = 1; i <= 5; i++) {
-    game.handleTableBounce({ x: 0.1, y: TABLE_HEIGHT, z: 0.5 }, 2);
-  }
+  // 1st bounce on P2 side: no point yet
+  game.handleTableBounce({ x: 0.1, y: TABLE_HEIGHT, z: 0.5 }, 2);
+  assert.strictEqual(game.scores[0], 0, 'P1 score must still be 0 after 1st bounce');
+  assert.strictEqual(game.scores[1], 0, 'P2 score must still be 0 after 1st bounce');
+  assert.strictEqual(game.bouncesP2, 1, 'bouncesP2 should be 1');
 
-  assert.strictEqual(game.scores[0], 0, 'P1 score must still be 0 after bounces on table');
-  assert.strictEqual(game.scores[1], 0, 'P2 score must still be 0 after bounces on table');
-  assert.strictEqual(game.state, GAME_STATES.RALLY, 'State must still be RALLY');
-  assert.strictEqual(game.bouncesP2, 5, 'bouncesP2 should be 5');
-  assert.strictEqual(game.isBallOffTable(physics.ballBody.position), false, 'Ball on table is not off table');
-  console.log('✓ PASS: 5 table bounces did NOT prematurely award any points!');
+  // 2nd bounce on P2 side: no point yet
+  game.handleTableBounce({ x: 0.1, y: TABLE_HEIGHT, z: 0.5 }, 2);
+  assert.strictEqual(game.scores[0], 0, 'P1 score must still be 0 after 2nd bounce');
+  assert.strictEqual(game.scores[1], 0, 'P2 score must still be 0 after 2nd bounce');
+  assert.strictEqual(game.bouncesP2, 2, 'bouncesP2 should be 2');
+
+  // 3rd bounce on P2 side (> 2 bounces on same side): P1 awarded point!
+  game.handleTableBounce({ x: 0.1, y: TABLE_HEIGHT, z: 0.5 }, 2);
+  assert.strictEqual(game.scores[0], 1, 'P1 score must be 1 after > 2 bounces on P2 side');
+  assert.strictEqual(game.scores[1], 0, 'P2 score must be 0');
+  console.log('✓ PASS: Exactly 1 or 2 bounces allow rally to continue; 3rd bounce awards point!');
 }
 
 // =========================================================================

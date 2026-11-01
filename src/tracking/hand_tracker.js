@@ -722,8 +722,11 @@ export class HandTracker {
       const middleKnuckle = landmarks[9];
       const pinkyKnuckle = landmarks[17];
 
-      const palmX = (wrist.x + middleKnuckle.x) / 2;
-      const palmY = (wrist.y + middleKnuckle.y) / 2;
+      // True geometric center of the hand/palm (centered across the palm and between knuckles and wrist)
+      const knucklesCenterX = (indexKnuckle.x + middleKnuckle.x + pinkyKnuckle.x) / 3;
+      const knucklesCenterY = (indexKnuckle.y + middleKnuckle.y + pinkyKnuckle.y) / 3;
+      const palmX = knucklesCenterX * 0.75 + wrist.x * 0.25;
+      const palmY = knucklesCenterY * 0.75 + wrist.y * 0.25;
 
       // Inverted selfie camera X so physical movement to the right increases userX
       const userX = 1.0 - palmX;
@@ -894,10 +897,11 @@ export class HandTracker {
       ctx.fill();
     });
 
-    // Visual HUD Badge & Charging Ring over hand for Spider-Man calibration
-    const midKnuckle = landmarks[9];
-    const cx = midKnuckle.x * w;
-    const cy = midKnuckle.y * h;
+    // Visual HUD Badge & Charging Ring centered squarely in the true center of the hand
+    const knucklesCenterX = (landmarks[5].x + landmarks[9].x + landmarks[17].x) / 3;
+    const knucklesCenterY = (landmarks[5].y + landmarks[9].y + landmarks[17].y) / 3;
+    const cx = (knucklesCenterX * 0.75 + landmarks[0].x * 0.25) * w;
+    const cy = (knucklesCenterY * 0.75 + landmarks[0].y * 0.25) * h;
 
     if (this.gestureCalibratedFlashTimer > 0) {
       ctx.save();
