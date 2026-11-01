@@ -7,6 +7,7 @@
     <!-- MediaPipe dependencies via reliable CDN -->
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_detection/face_detection.js" crossorigin="anonymous"></script>
     <link rel="stylesheet" href="/src/style.css" />
   </head>
   <body>
@@ -67,6 +68,9 @@
           </button>
           <button id="btn-camera-view" class="hud-btn" title="Change Camera View (Hotkey: V)">
             <span id="cam-view-text">CAM: P1</span>
+          </button>
+          <button id="btn-toggle-facetrack" class="hud-btn" title="Toggle VR Head Tracking Perspective (Hotkey: F)">
+            <span id="facetrack-btn-text">HEAD VR: OFF</span>
           </button>
           <button id="btn-toggle-sound" class="hud-btn active" title="Toggle Audio">
             <span id="sound-icon">AUDIO ON</span>

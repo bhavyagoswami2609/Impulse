@@ -232,6 +232,14 @@ body, html {
   box-shadow: 0 0 16px rgba(0, 255, 136, 0.6);
 }
 
+.hud-btn.vr-active {
+  background: linear-gradient(135deg, #0088cc, #00eeff);
+  color: #000;
+  border-color: #00eeff;
+  font-weight: 800;
+  box-shadow: 0 0 18px rgba(0, 238, 255, 0.7);
+}
+
 .hud-btn.primary {
   background: linear-gradient(135deg, #0088cc, #00ddff);
   color: #000;

@@ -414,7 +414,12 @@ export class HandTracker {
 
         if (!this.handsInstance) {
           this.handsInstance = new window.Hands({
-            locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`,
+            locateFile: (file) => {
+              if (file.includes('face_detection')) {
+                return `https://cdn.jsdelivr.net/npm/@mediapipe/face_detection/${file}`;
+              }
+              return `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`;
+            },
           });
 
           this.handsInstance.setOptions({

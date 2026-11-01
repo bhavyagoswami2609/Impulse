@@ -64,6 +64,8 @@ export class TableTennisScene {
     };
 
     this.currentViewMode = 'host';
+    this.headParallaxOffset = new THREE.Vector3(0, 0, 0);
+    this.smoothedHeadOffset = new THREE.Vector3(0, 0, 0);
     this.setViewMode('host');
 
     // 4. Lighting
@@ -325,6 +327,12 @@ export class TableTennisScene {
     this.setViewMode(this.currentViewMode);
   }
 
+  setHeadParallaxOffset(offset) {
+    if (offset) {
+      this.headParallaxOffset.copy(offset);
+    }
+  }
+
   setViewMode(mode) {
     this.currentViewMode = mode;
     const view = this.views[mode] || this.views.host;
@@ -338,6 +346,51 @@ export class TableTennisScene {
   }
 
   update(deltaTime) {
+    // 0. Smooth Camera Perspective with Head-Tracking Parallax (VR window effect)
+    const view = this.views[this.currentViewMode] || this.views.host;
+    if (view) {
+      if (view.up) {
+        this.camera.up.copy(view.up);
+      } else {
+        this.camera.up.set(0, 1, 0);
+      }
+
+      this.smoothedHeadOffset.lerp(this.headParallaxOffset, Math.min(1.0, deltaTime * 12.0));
+
+      const camX = view.position.x;
+      const camY = view.position.y;
+      const camZ = view.position.z;
+
+      if (this.currentViewMode === 'topdown') {
+        this.camera.position.set(
+          camX + this.smoothedHeadOffset.x,
+          camY - this.smoothedHeadOffset.z * 0.5,
+          camZ + this.smoothedHeadOffset.y
+        );
+      } else if (this.currentViewMode === 'client') {
+        this.camera.position.set(
+          camX + this.smoothedHeadOffset.x,
+          camY + this.smoothedHeadOffset.y,
+          camZ - this.smoothedHeadOffset.z
+        );
+      } else if (this.currentViewMode === 'broadcast') {
+        this.camera.position.set(
+          camX - this.smoothedHeadOffset.z,
+          camY + this.smoothedHeadOffset.y,
+          camZ + this.smoothedHeadOffset.x
+        );
+      } else {
+        // Standard Host view (-Z looking towards +Z)
+        this.camera.position.set(
+          camX + this.smoothedHeadOffset.x,
+          camY + this.smoothedHeadOffset.y,
+          camZ + this.smoothedHeadOffset.z
+        );
+      }
+
+      this.camera.lookAt(view.target);
+    }
+
     // Fade out impact ring
     if (this.impactTimer > 0) {
       this.impactTimer -= deltaTime;

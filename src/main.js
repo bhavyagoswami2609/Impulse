@@ -3,6 +3,7 @@ import { TableTennisScene } from './graphics/scene.js';
 import { PhysicsWorld } from './physics/physics_world.js';
 import { AirHockeyPhysics } from './physics/air_hockey_physics.js';
 import { HandTracker } from './tracking/hand_tracker.js';
+import { FaceTracker } from './tracking/face_tracker.js';
 import { MultiplayerManager } from './network/multiplayer.js';
 import { TableTennisGame, GAME_STATES } from './game/table_tennis_game.js';
 import { AirHockeyGame, AIR_HOCKEY_STATES } from './game/air_hockey_game.js';
@@ -42,6 +43,13 @@ class TableTennisApp {
       canvasElement: document.getElementById('webcam-canvas'),
       onStatusChange: this.onTrackingStatusChange.bind(this),
       onCalibrationUpdate: this.onCalibrationUpdate.bind(this),
+    });
+
+    // 4b. Initialize Face Tracker for VR Holographic Head Tracking Perspective
+    this.faceTracker = new FaceTracker({
+      videoElement: document.getElementById('webcam-video'),
+      canvasElement: document.getElementById('webcam-canvas'),
+      onStatusChange: () => this.syncHUD(),
     });
 
     // 5. Initialize Table Tennis Game Rules & Logic
@@ -138,7 +146,18 @@ class TableTennisApp {
       }
     }
 
-    // 3. Audio state
+    // 3. Face Tracking (Head VR Perspective) state
+    const isFaceTracking = Boolean(this.faceTracker && this.faceTracker.enabled);
+    const btnFaceTrack = document.getElementById('btn-toggle-facetrack');
+    const faceTrackBtnText = document.getElementById('facetrack-btn-text');
+    if (btnFaceTrack) {
+      btnFaceTrack.classList.toggle('vr-active', isFaceTracking);
+    }
+    if (faceTrackBtnText) {
+      faceTrackBtnText.textContent = isFaceTracking ? 'HEAD VR: ON' : 'HEAD VR: OFF';
+    }
+
+    // 4. Audio state
     const isSoundOn = Boolean(sound && sound.enabled);
     const btnSound = document.getElementById('btn-toggle-sound');
     const soundIcon = document.getElementById('sound-icon');
@@ -149,7 +168,7 @@ class TableTennisApp {
       soundIcon.textContent = isSoundOn ? 'AUDIO ON' : 'AUDIO OFF';
     }
 
-    // 4. Invert X
+    // 5. Invert X
     const chkInvertX = document.getElementById('chk-invert-x');
     const isInvert = Boolean(this.tracker && this.tracker.invertX);
     if (chkInvertX) chkInvertX.checked = isInvert;
@@ -161,6 +180,9 @@ class TableTennisApp {
     this.syncHUD();
     if (success) {
       this.showActionToast('WEBCAM TRACKING ACTIVE');
+      if (this.faceTracker && this.faceTracker.enabled) {
+        this.faceTracker.startTracking();
+      }
     } else {
       const err = this.tracker.lastError;
       if (err && err.type === 'not_allowed') {
@@ -179,6 +201,7 @@ class TableTennisApp {
     sound.ensureContext();
     if (this.tracker.isTracking || this.tracker.isStarting) {
       this.tracker.stopWebcamTracking();
+      if (this.faceTracker) this.faceTracker.stopTracking();
       this.syncHUD();
       this.showActionToast('WEBCAM: OFF (MOUSE ACTIVE)');
     } else {
@@ -188,6 +211,9 @@ class TableTennisApp {
       this.syncHUD();
       if (success) {
         this.showActionToast('WEBCAM: ON');
+        if (this.faceTracker && this.faceTracker.enabled) {
+          this.faceTracker.startTracking();
+        }
       } else {
         const err = this.tracker.lastError;
         if (err && err.type === 'not_allowed') {
@@ -201,6 +227,27 @@ class TableTennisApp {
         } else {
           this.showActionToast('WEBCAM UNAVAILABLE - MOUSE ACTIVE');
         }
+      }
+    }
+  }
+
+  async toggleFaceTracking() {
+    sound.ensureContext();
+    const enabled = await this.faceTracker.toggle();
+    this.syncHUD();
+    this.showActionToast(enabled ? 'HEAD VR PERSPECTIVE: ON' : 'HEAD VR PERSPECTIVE: OFF');
+
+    if (enabled) {
+      // If webcam is not yet running, start it up automatically so face tracking can track
+      if (!this.tracker.isTracking && !this.tracker.isStarting) {
+        this.tracker.startWebcamTracking().then((success) => {
+          if (success && this.faceTracker.enabled) {
+            this.faceTracker.startTracking();
+          }
+          this.syncHUD();
+        });
+      } else if (this.tracker.isTracking) {
+        this.faceTracker.startTracking();
       }
     }
   }
@@ -236,6 +283,7 @@ class TableTennisApp {
     }
 
     this.tracker.setNeutralCenter();
+    if (this.faceTracker) this.faceTracker.setNeutralCenter();
     this.showActionToast('CENTER LOCKED & CALIBRATED');
   }
 
@@ -312,6 +360,12 @@ class TableTennisApp {
       this.syncHUD();
     });
 
+    // Face Tracking / VR Head Perspective Toggle in HUD
+    const btnFaceTrack = document.getElementById('btn-toggle-facetrack');
+    if (btnFaceTrack) {
+      btnFaceTrack.addEventListener('click', () => this.toggleFaceTracking());
+    }
+
     // Calibration Setup Modal
     const calibModal = document.getElementById('calibration-modal');
     const btnCalibrate = document.getElementById('btn-calibrate-hand');
@@ -344,6 +398,7 @@ class TableTennisApp {
     const triggerCenterLock = () => {
       sound.ensureContext();
       this.tracker.setNeutralCenter();
+      if (this.faceTracker) this.faceTracker.setNeutralCenter();
       this.showActionToast('CENTER LOCKED');
     };
 
@@ -463,6 +518,8 @@ class TableTennisApp {
         btnCamera.click();
       } else if (e.code === 'KeyM') {
         this.toggleWebcam();
+      } else if (e.code === 'KeyF') {
+        this.toggleFaceTracking();
       }
     });
 
@@ -768,6 +825,19 @@ class TableTennisApp {
     // 1. Get smoothly filtered paddle/striker transform from Hand Tracker or Mouse
     const localPaddleTransform = this.tracker.getTransform(deltaTime);
 
+    // 1b. Update Face Tracking Parallax Offset (VR Perspective)
+    const headOffset = this.faceTracker.getParallaxOffset(deltaTime);
+    this.scene.setHeadParallaxOffset(headOffset);
+
+    // 1c. Draw Holographic Face Box on PIP Canvas if active
+    if (this.faceTracker.enabled && this.tracker.canvasCtx && this.tracker.canvasElement) {
+      this.faceTracker.drawPIPOverlay(
+        this.tracker.canvasCtx,
+        this.tracker.canvasElement.width,
+        this.tracker.canvasElement.height
+      );
+    }
+
     // 2. Update active game (Air Hockey or Table Tennis)
     if (!this.isMenuOpen) {
       if (this.gameMode === 'hockey') {
@@ -802,8 +872,8 @@ class TableTennisApp {
 
 if (document.readyState === 'loading') {
   window.addEventListener('DOMContentLoaded', () => {
-    window.app = new TableTennisApp();
+    window.app = window.gameApp = new TableTennisApp();
   });
 } else {
-  window.app = new TableTennisApp();
+  window.app = window.gameApp = new TableTennisApp();
 }
