@@ -178,6 +178,15 @@ export class PhysicsWorld {
           this.callbacks.onBallBounceTable(bouncePos, side);
         }
       } else if (targetName === 'paddle1') {
+        // Prevent back of racket from hitting the ball:
+        // Ball must be on FRONT face (+Z side of paddle1) and paddle not retreating backward
+        const dz = this.ballBody.position.z - this.paddle1Body.position.z;
+        const p1Vz = this.paddle1Body.velocity.z;
+        if (dz < -0.02 || p1Vz < -0.15) {
+          // Contact is on the back face of the racket -> ignore
+          return;
+        }
+
         if (now - this.lastPaddleHitTime > 120) {
           this.lastPaddleHitTime = now;
           this.callbacks.onBallHitPaddle(1, this.paddle1Body.velocity.length());
@@ -190,6 +199,15 @@ export class PhysicsWorld {
         if (this.ballBody.velocity.y < 0.3) this.ballBody.velocity.y = 0.8;
         this.ballBody.angularVelocity.set(0, 0, 0);
       } else if (targetName === 'paddle2') {
+        // Prevent back of racket from hitting the ball:
+        // Ball must be on FRONT face (-Z side of paddle2) and paddle not retreating forward (+Z)
+        const dz = this.ballBody.position.z - this.paddle2Body.position.z;
+        const p2Vz = this.paddle2Body.velocity.z;
+        if (dz > 0.02 || p2Vz > 0.15) {
+          // Contact is on the back face of Player 2's racket -> ignore
+          return;
+        }
+
         if (now - this.lastPaddleHitTime > 120) {
           this.lastPaddleHitTime = now;
           this.callbacks.onBallHitPaddle(2, this.paddle2Body.velocity.length());
@@ -258,8 +276,10 @@ export class PhysicsWorld {
       const dz = bPos.z - p1Pos.z;
       const dist2D = Math.hypot(dx, dy);
 
-      // Contact requires ball to physically reach the racket face (within 12cm along Z and within blade radius)
-      if (Math.abs(dz) <= 0.12 && dist2D < 0.14 && now - this.lastPaddleHitTime > 160) {
+      // Contact requires ball to hit the FRONT face (+Z side) of Player 1's racket:
+      // dz must be in [-0.02, 0.12] and racket must not be pulling backwards away from net (p1Vel.z >= -0.15)
+      const isFrontFaceContact = dz >= -0.02 && dz <= 0.12 && p1Vel.z >= -0.15;
+      if (isFrontFaceContact && dist2D < 0.14 && now - this.lastPaddleHitTime > 160) {
         this.lastPaddleHitTime = now;
 
         const swingForward = Math.max(0, p1Vel.z);
@@ -317,8 +337,10 @@ export class PhysicsWorld {
       const dz = bPos.z - p2Pos.z;
       const dist2D = Math.hypot(dx, dy);
 
-      // Contact requires ball to physically reach the racket face (within 12cm along Z and within blade radius)
-      if (Math.abs(dz) <= 0.12 && dist2D < 0.14 && now - this.lastPaddleHitTime > 160) {
+      // Contact requires ball to hit the FRONT face (-Z side) of Player 2's racket:
+      // dz must be in [-0.12, 0.02] and racket must not be pulling backwards towards +Z (p2Vel.z <= 0.15)
+      const isFrontFaceContact = dz <= 0.02 && dz >= -0.12 && p2Vel.z <= 0.15;
+      if (isFrontFaceContact && dist2D < 0.14 && now - this.lastPaddleHitTime > 160) {
         this.lastPaddleHitTime = now;
 
         const swingForward = Math.max(0, -p2Vel.z);
@@ -390,12 +412,12 @@ export class PhysicsWorld {
     this.isInRally = true;
     this.isServeFlight = true;
     this.ballBody.type = CANNON.Body.DYNAMIC;
+    this.ballBody.collisionResponse = true;
 
     const startX = options.startX !== undefined ? options.startX : 0;
     const targetVx = options.targetVx !== undefined ? options.targetVx : 0;
     const paceVz = options.paceVz !== undefined ? options.paceVz : 2.75;
     const vy = options.vy !== undefined ? options.vy : -0.66;
-    const spinY = options.spinY !== undefined ? options.spinY : 0;
 
     if (server === 1) {
       // P1 serves towards +Z
@@ -418,12 +440,13 @@ export class PhysicsWorld {
     this.isInRally = false;
     this.isServeFlight = false;
     this.ballBody.type = CANNON.Body.KINEMATIC;
+    this.ballBody.collisionResponse = false;
     this.ballBody.velocity.set(0, 0, 0);
     this.ballBody.angularVelocity.set(0, 0, 0);
 
-    const z = server === 1 ? -1.25 : 1.25;
+    const z = server === 1 ? -1.05 : 1.05;
     const x = paddlePos ? THREE.MathUtils.clamp(paddlePos.x, -0.45, 0.45) : 0;
-    this.ballBody.position.set(x, 0.98, z);
+    this.ballBody.position.set(x, TABLE_HEIGHT + 0.22, z);
   }
 
   applyBallImpulse(impulseVec) {

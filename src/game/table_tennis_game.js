@@ -146,8 +146,8 @@ export class TableTennisGame {
     }
 
     if (this.state === GAME_STATES.SERVE_WAIT) {
-      this.state = GAME_STATES.RALLY;
-      this.onStateChange(this.state);
+      // In SERVE_WAIT, passive paddle collisions must NEVER start the rally or launch the ball
+      return;
     }
   }
 
@@ -514,13 +514,18 @@ export class TableTennisGame {
         if (this.server === 1) {
           const p1Pos = this.scene.paddle1.position;
           const hoverX = THREE.MathUtils.clamp(p1Pos.x, -0.45, 0.45);
-          this.physics.ballBody.position.set(hoverX, TABLE_HEIGHT + 0.22, -1.05);
+          const ballZ = -1.05;
+          this.physics.ballBody.position.set(hoverX, TABLE_HEIGHT + 0.22, ballZ);
           this.physics.ballBody.velocity.set(0, 0, 0);
           this.physics.ballBody.angularVelocity.set(0, 0, 0);
+          this.physics.ballBody.collisionResponse = false;
 
-          // Support Open-Hand Gesture Serve AND Physical Strike Serve
-          const distToBall = Math.hypot(p1Pos.x - hoverX, p1Pos.y - (TABLE_HEIGHT + 0.22), p1Pos.z - (-1.05));
-          const isStrikeServe = distToBall < 0.24 && (localPaddleTransform ? localPaddleTransform.velocity.z > 0.4 : false);
+          // Strike serve requires paddle to be BEHIND the ball (p1Pos.z <= ballZ + 0.04)
+          // and swinging FORWARD (+Z) with the FRONT face of the racket
+          const isBehindBall = p1Pos.z < ballZ + 0.04;
+          const isMovingForward = localPaddleTransform ? localPaddleTransform.velocity.z > 0.45 : false;
+          const distToBall = Math.hypot(p1Pos.x - hoverX, p1Pos.y - (TABLE_HEIGHT + 0.22), p1Pos.z - ballZ);
+          const isStrikeServe = isBehindBall && distToBall < 0.22 && isMovingForward;
           const isOpenHandServe = localPaddleTransform ? localPaddleTransform.justOpenedHand : false;
 
           if (isOpenHandServe || isStrikeServe) {
