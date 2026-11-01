@@ -364,8 +364,8 @@ export class TableTennisScene {
         this.camera.up.set(0, 1, 0);
       }
 
-      this.smoothedHeadOffset.lerp(this.headParallaxOffset, Math.min(1.0, deltaTime * 12.0));
-      this.smoothedHeadYaw += (this.headYaw - this.smoothedHeadYaw) * Math.min(1.0, deltaTime * 12.0);
+      this.smoothedHeadOffset.lerp(this.headParallaxOffset, Math.min(1.0, deltaTime * 8.0));
+      this.smoothedHeadYaw += (this.headYaw - this.smoothedHeadYaw) * Math.min(1.0, deltaTime * 8.0);
 
       const camX = view.position.x;
       const camY = view.position.y;

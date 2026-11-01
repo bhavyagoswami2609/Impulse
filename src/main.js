@@ -508,6 +508,29 @@ class TableTennisApp {
       });
     }
 
+    // Camera PIP Size Toggle (Cycle Big -> Max -> Min)
+    const btnPipSize = document.getElementById('btn-pip-size');
+    const pipContainer = document.getElementById('webcam-pip');
+    const pipSizeText = document.getElementById('pip-size-text');
+    if (btnPipSize && pipContainer) {
+      const pipSizes = [
+        { cls: '', label: 'BIG' },
+        { cls: 'pip-large', label: 'MAX' },
+        { cls: 'pip-compact', label: 'MIN' },
+      ];
+      let currentSizeIdx = 0;
+      btnPipSize.addEventListener('click', () => {
+        currentSizeIdx = (currentSizeIdx + 1) % pipSizes.length;
+        pipContainer.classList.remove('pip-large', 'pip-compact');
+        if (pipSizes[currentSizeIdx].cls) {
+          pipContainer.classList.add(pipSizes[currentSizeIdx].cls);
+        }
+        if (pipSizeText) {
+          pipSizeText.textContent = `SIZE: ${pipSizes[currentSizeIdx].label}`;
+        }
+      });
+    }
+
     // Match Over / Rematch Modal
     const matchModal = document.getElementById('matchover-modal');
     const btnMatchRestart = document.getElementById('btn-match-restart');

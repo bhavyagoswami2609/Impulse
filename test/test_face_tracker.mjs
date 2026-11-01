@@ -354,6 +354,35 @@ console.log('\n--- Test 5: Head Yaw Rotation (Looking Left vs. Right around Y-ax
   }
   assert(Math.abs(yaw) < 0.01, `Disabling must smoothly return yaw to 0, got ${yaw}`);
   console.log('✓ Disabling smoothly returns head yaw rotation to 0.00°');
+
+  // Verify pure head roll tilt (ear-to-shoulder sideways tilt) does NOT trigger false yaw
+  tracker.enable();
+  const tiltAngle = 15 * Math.PI / 180; // 15° sideways head tilt
+  const rot = (x, y) => ({
+    x: 0.50 + x * Math.cos(tiltAngle) - y * Math.sin(tiltAngle),
+    y: 0.45 + x * Math.sin(tiltAngle) + y * Math.cos(tiltAngle),
+  });
+  const tiltedLandmarks = [
+    rot(-0.05, 0),     // Right Eye
+    rot(0.05, 0),      // Left Eye
+    rot(0, 0.07),      // Nose (centered on face, rotated rigidly with head)
+  ];
+  for (let i = 0; i < 40; i++) {
+    yaw = stepFace(neutralBox, tiltedLandmarks);
+  }
+  assert(Math.abs(yaw) < 0.03, `Pure head roll tilt must not produce false yaw rotation, got ${yaw}`);
+  console.log('✓ Pure sideways head tilt produces 0.00° false yaw (roll-invariant projection)');
+}
+
+// 6. Test Realistic Playable Defaults
+console.log('\n--- Test 6: Realistic Playable Sensitivity Defaults ---');
+{
+  const tracker = new FaceTracker(); // Uses default realistic gains
+  assert.strictEqual(tracker.gainYaw, 0.22, 'Default gainYaw should be 0.22 for playable subtle rotation');
+  assert.strictEqual(tracker.maxYaw, 0.14, 'Default maxYaw should be 0.14 rad (~8 degrees max)');
+  assert.strictEqual(tracker.maxOffsetX, 0.16, 'Default maxOffsetX should be 0.16m');
+  assert.strictEqual(tracker.maxOffsetY, 0.08, 'Default maxOffsetY should be 0.08m');
+  console.log('✓ Realistic sensitivity gains and clamps verified as default');
 }
 
 console.log('\n=== ALL HEAD TRACKING, PARALLAX & ROTATION TESTS PASSED! ===');
