@@ -195,14 +195,24 @@ async function main() {
 
     // Test 3: Click Face Track button to toggle OFF
     console.log('--- Testing Face Tracking Toggle OFF via Button Click ---');
-    await client.evaluate(`document.getElementById('btn-toggle-facetrack').click()`);
-    await wait(250);
+    const clickResult = await client.evaluate(`(async () => {
+      const btn = document.getElementById('btn-toggle-facetrack');
+      btn.click();
+      await new Promise(r => setTimeout(r, 200));
+      return {
+        enabled: window.gameApp.faceTracker.enabled,
+        btnText: document.getElementById('facetrack-btn-text')?.textContent,
+        hasClass: btn.classList.contains('vr-active')
+      };
+    })()`);
+    console.log('clickResult:', clickResult);
 
     const toggledOffState = await client.evaluate(`({
       enabled: window.gameApp.faceTracker.enabled,
       btnText: document.getElementById('facetrack-btn-text')?.textContent,
       hasClass: document.getElementById('btn-toggle-facetrack')?.classList.contains('vr-active')
     })`);
+    console.log('toggledOffState:', toggledOffState);
     assert.strictEqual(toggledOffState.enabled, false, 'Face tracking should be disabled after click');
     assert.strictEqual(toggledOffState.btnText, 'HEAD VR: OFF', 'Button text should update to HEAD VR: OFF');
     assert.strictEqual(toggledOffState.hasClass, false, 'Button should remove vr-active style');

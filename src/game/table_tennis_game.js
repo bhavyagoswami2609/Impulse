@@ -36,6 +36,8 @@ export class TableTennisGame {
     // Smash meters (0 to 100)
     this.smashEnergy = [0, 0];
     this.isHyperSmashActive = [false, false];
+    this.netHitDuringServe = false;
+    this.deadBallTimer = 0;
 
     // CPU AI Opponent
     this.aiEnabled = true;
@@ -87,36 +89,22 @@ export class TableTennisGame {
       this.bouncesP2++;
     }
 
+    // Progress serve state: when ball bounces on server side and receiver side without net clip, serve is complete
     if (this.isServiceInProgress) {
       if (this.server === 1) {
-        if (this.bouncesP1 === 1 && this.bouncesP2 === 0) {
-          return;
-        } else if (this.bouncesP1 === 1 && this.bouncesP2 === 1) {
+        if (this.bouncesP1 >= 1 && this.bouncesP2 >= 1 && !this.netHitDuringServe) {
           this.isServiceInProgress = false;
           if (this.physics) this.physics.isServeFlight = false;
-          return;
-        } else if (this.bouncesP1 > 1 || (this.bouncesP1 === 0 && this.bouncesP2 > 0)) {
-          this.awardPoint(2, 'FAULT');
         }
       } else {
-        // CPU serving
-        if (this.bouncesP2 === 1 && this.bouncesP1 === 0) {
-          return;
-        } else if (this.bouncesP2 === 1 && this.bouncesP1 === 1) {
+        if (this.bouncesP2 >= 1 && this.bouncesP1 >= 1 && !this.netHitDuringServe) {
           this.isServiceInProgress = false;
           if (this.physics) this.physics.isServeFlight = false;
-          return;
-        } else if (this.bouncesP2 > 1 || (this.bouncesP2 === 0 && this.bouncesP1 > 0)) {
-          this.awardPoint(1, 'FAULT');
         }
       }
-    } else {
-      if (this.bouncesP1 >= 2) {
-        this.awardPoint(2, 'DOUBLE BOUNCE');
-      } else if (this.bouncesP2 >= 2) {
-        this.awardPoint(1, 'DOUBLE BOUNCE');
-      }
     }
+    // IMPORTANT: No points are awarded while the ball is still bouncing on the table!
+    // Points are strictly awarded ONLY when the ball physically leaves the table.
   }
 
   handlePaddleHit(player, speed) {
@@ -157,30 +145,129 @@ export class TableTennisGame {
   }
 
   handleNetHit() {
-    if (this.multiplayer.role === 'client') return;
+    sound.playNetClip();
     if (this.isServiceInProgress) {
-      this.onActionToast('LET - RE-SERVE');
-      this.resetRally(this.server);
+      this.netHitDuringServe = true;
+    }
+  }
+
+  /**
+   * Determines whether the ball has physically left the table boundaries.
+   * True only when:
+   * 1. The ball is outside the table perimeter AND drops below table top height (cannot land on table).
+   * 2. The ball reaches the floor or flies far out of bounds.
+   */
+  isBallOffTable(ballPos, dt = 0) {
+    if (!ballPos) return false;
+
+    const isOutsideX = Math.abs(ballPos.x) > TABLE_WIDTH / 2 + 0.08;
+    const isOutsideZ = Math.abs(ballPos.z) > TABLE_LENGTH / 2 + 0.08;
+    const isBelowTable = ballPos.y < TABLE_HEIGHT - 0.04;
+
+    // Has dropped below table top outside table bounds
+    if (isBelowTable && (isOutsideX || isOutsideZ)) {
+      this.deadBallTimer = 0;
+      return true;
+    }
+
+    // Or reached the floor
+    if (ballPos.y <= 0.08) {
+      this.deadBallTimer = 0;
+      return true;
+    }
+
+    // Or flown far out of bounds past the courts
+    if (Math.abs(ballPos.z) > 2.5 || Math.abs(ballPos.x) > 1.8) {
+      this.deadBallTimer = 0;
+      return true;
+    }
+
+    // Dead ball safety: If ball comes to a complete rest on the table for > 1.2s after bouncing
+    if (dt > 0 && this.physics && (this.bouncesP1 >= 1 || this.bouncesP2 >= 1)) {
+      const speed = this.physics.ballBody.velocity.length();
+      if (speed < 0.06 && ballPos.y < TABLE_HEIGHT + 0.10) {
+        this.deadBallTimer = (this.deadBallTimer || 0) + dt;
+        if (this.deadBallTimer > 1.2) {
+          this.deadBallTimer = 0;
+          return true;
+        }
+      } else {
+        this.deadBallTimer = 0;
+      }
+    }
+
+    return false;
+  }
+
+  /**
+   * Called strictly when the ball has physically left the table.
+   * Decides winner based on where the ball bounced prior to leaving.
+   */
+  handleBallLeftTable() {
+    if (this.multiplayer.role === 'client') return;
+    if (this.state !== GAME_STATES.RALLY) return;
+
+    // Serve phase resolution
+    if (this.isServiceInProgress) {
+      this.isServiceInProgress = false;
+      if (this.physics) this.physics.isServeFlight = false;
+
+      // Net clip during serve
+      if (this.netHitDuringServe) {
+        this.netHitDuringServe = false;
+        const landedOnBoth =
+          this.server === 1
+            ? this.bouncesP1 >= 1 && this.bouncesP2 >= 1
+            : this.bouncesP2 >= 1 && this.bouncesP1 >= 1;
+        if (landedOnBoth) {
+          this.onActionToast('LET - RE-SERVE');
+          this.resetRally(this.server);
+          return;
+        }
+      }
+
+      if (this.server === 1) {
+        // Player 1 served: must have bounced on P1 side and P2 side
+        if (this.bouncesP1 >= 1 && this.bouncesP2 >= 1) {
+          this.awardPoint(1, 'WINNER');
+        } else {
+          this.awardPoint(2, 'FAULT');
+        }
+      } else {
+        // CPU served: must have bounced on P2 side and P1 side
+        if (this.bouncesP2 >= 1 && this.bouncesP1 >= 1) {
+          this.awardPoint(2, 'WINNER');
+        } else {
+          this.awardPoint(1, 'FAULT');
+        }
+      }
+      return;
+    }
+
+    // Normal rally resolution:
+    if (this.lastHitter === 1) {
+      // Player 1 struck the ball last
+      if (this.bouncesP2 >= 1) {
+        // Ball landed on Player 2's side and left without P2 returning -> P1 point
+        this.awardPoint(1, 'WINNER');
+      } else {
+        // Ball left the table without landing on Player 2's side -> P1 hit out -> P2 point
+        this.awardPoint(2, 'OUT');
+      }
+    } else {
+      // Player 2 (CPU) struck the ball last
+      if (this.bouncesP1 >= 1) {
+        // Ball landed on Player 1's side and left without P1 returning -> P2 point
+        this.awardPoint(2, 'WINNER');
+      } else {
+        // Ball left the table without landing on Player 1's side -> P2 hit out -> P1 point
+        this.awardPoint(1, 'OUT');
+      }
     }
   }
 
   handleFloorHit() {
-    if (this.multiplayer.role === 'client') return;
-    if (this.state !== GAME_STATES.RALLY) return;
-
-    if (this.lastHitter === 1) {
-      if (this.bouncesP2 === 1) {
-        this.awardPoint(1, 'WINNER');
-      } else {
-        this.awardPoint(2, 'OUT');
-      }
-    } else {
-      if (this.bouncesP1 === 1) {
-        this.awardPoint(2, 'WINNER');
-      } else {
-        this.awardPoint(1, 'OUT');
-      }
-    }
+    this.handleBallLeftTable();
   }
 
   /**
@@ -271,6 +358,8 @@ export class TableTennisGame {
     this.server = server;
     this.state = GAME_STATES.SERVE_WAIT;
     this.isServiceInProgress = true;
+    this.netHitDuringServe = false;
+    this.deadBallTimer = 0;
     this.bouncesP1 = 0;
     this.bouncesP2 = 0;
     this.rallyLength = 0;
@@ -445,8 +534,8 @@ export class TableTennisGame {
 
         this.physics.step(dt, p1Pos, p1Vel, p1Yaw, p2Pos, p2Vel, p2Yaw, this.aiShotTargetX);
 
-        if (this.physics.ballBody.position.y < -0.4 || Math.abs(this.physics.ballBody.position.z) > 4.5) {
-          this.handleFloorHit();
+        if (this.isBallOffTable(this.physics.ballBody.position, dt)) {
+          this.handleBallLeftTable();
         }
       }
 
