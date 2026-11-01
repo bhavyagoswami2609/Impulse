@@ -4,27 +4,9 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Xbox 360 Table Tennis</title>
-    <!-- Prevent concurrent MediaPipe solutions (Hands & FaceDetection) from overwriting shared Emscripten downloads -->
-    <script>
-      window.Module = window.Module || {};
-      (function() {
-        var downloads = {};
-        Object.defineProperty(window.Module, 'dataFileDownloads', {
-          get: function() { return downloads; },
-          set: function(val) {
-            if (val && typeof val === 'object') {
-              for (var k in val) { downloads[k] = val[k]; }
-            }
-          },
-          configurable: true,
-          enumerable: true
-        });
-      })();
-    </script>
     <!-- MediaPipe dependencies via reliable CDN -->
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_detection/face_detection.js" crossorigin="anonymous"></script>
     <link rel="stylesheet" href="/src/style.css" />
   </head>
   <body>
@@ -77,8 +59,11 @@
           <button id="btn-serve-ball" class="hud-btn primary" title="Serve Ball (Hotkey: Space)">
             SERVE
           </button>
-          <button id="btn-calibrate-hand" class="hud-btn" title="Motion Calibration (Hotkey: C)">
+          <button id="btn-calibrate-hand" class="hud-btn" title="Instant Hand & Face Calibration (Hotkey: C)">
             CALIBRATE
+          </button>
+          <button id="btn-calib-settings" class="hud-btn" title="Calibration Sensitivity Settings" style="padding: 7px 10px;">
+            ⚙
           </button>
           <button id="btn-toggle-cam" class="hud-btn active" title="Toggle Webcam Motion Control (Hotkey: M)">
             <span id="cam-btn-text">WEBCAM: ON</span>
@@ -204,7 +189,7 @@
         </div>
 
         <button id="btn-set-center-modal" class="modal-btn success" style="margin-bottom: 10px;">
-          LOCK CURRENT HAND AS CENTER (C)
+          LOCK CURRENT HAND & FACE AS CENTER (C)
         </button>
         <button id="btn-save-calib-modal" class="modal-btn">
           APPLY & RESUME

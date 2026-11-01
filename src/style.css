@@ -240,6 +240,23 @@ body, html {
   box-shadow: 0 0 18px rgba(0, 238, 255, 0.7);
 }
 
+.hud-btn.calibrated-pulse {
+  background: linear-gradient(135deg, #107c10, #52b052) !important;
+  color: #ffffff !important;
+  border-color: #52b052 !important;
+  font-weight: 800 !important;
+  box-shadow: 0 0 22px rgba(82, 176, 82, 0.9) !important;
+  transform: scale(1.06);
+}
+
+.btn-pip-quick-center.calibrated-pulse {
+  background: #107c10 !important;
+  border-color: #52b052 !important;
+  color: #ffffff !important;
+  box-shadow: 0 0 12px rgba(82, 176, 82, 0.9) !important;
+  transform: scale(1.05);
+}
+
 .hud-btn.primary {
   background: linear-gradient(135deg, #0088cc, #00ddff);
   color: #000;

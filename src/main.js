@@ -260,14 +260,33 @@ class TableTennisApp {
     return enabled;
   }
 
+  triggerFullCalibration() {
+    sound.ensureContext();
+    if (sound && sound.playCalibrate) {
+      sound.playCalibrate();
+    }
+
+    // 1. Calibrate Hand Tracker
+    if (this.tracker) {
+      this.tracker.setNeutralCenter();
+    }
+
+    // 2. Calibrate Face Tracker (locks neutral head position and zeroes parallax)
+    if (this.faceTracker) {
+      this.faceTracker.setNeutralCenter();
+    }
+
+    // 3. Visual feedback
+    this.flashCalibrateButton();
+    this.showActionToast('HAND & FACE CALIBRATED ✓');
+  }
+
   async handleCalibrate() {
     sound.ensureContext();
-    const calibModal = document.getElementById('calibration-modal');
-    if (calibModal) calibModal.classList.add('open');
 
     // If webcam is off, start it
     if (!this.tracker.isTracking && !this.tracker.isStarting) {
-      this.showActionToast('STARTING WEBCAM FOR CALIBRATION...');
+      this.showActionToast('STARTING WEBCAM...');
       const success = await this.tracker.startWebcamTracking();
       this.syncHUD();
       if (!success) {
@@ -282,9 +301,40 @@ class TableTennisApp {
       }
     }
 
-    this.tracker.setNeutralCenter();
-    if (this.faceTracker) this.faceTracker.setNeutralCenter();
-    this.showActionToast('CENTER LOCKED & CALIBRATED');
+    this.triggerFullCalibration();
+  }
+
+  flashCalibrateButton() {
+    const btnHud = document.getElementById('btn-calibrate-hand');
+    const btnPip = document.getElementById('btn-pip-quick-center');
+    const btnModal = document.getElementById('btn-set-center-modal');
+
+    if (btnHud) {
+      btnHud.classList.add('calibrated-pulse');
+      btnHud.textContent = 'CALIBRATED ✓';
+      setTimeout(() => {
+        btnHud.classList.remove('calibrated-pulse');
+        btnHud.textContent = 'CALIBRATE';
+      }, 1200);
+    }
+
+    if (btnPip) {
+      btnPip.classList.add('calibrated-pulse');
+      btnPip.textContent = 'LOCKED ✓';
+      setTimeout(() => {
+        btnPip.classList.remove('calibrated-pulse');
+        btnPip.textContent = 'SET CENTER';
+      }, 1200);
+    }
+
+    if (btnModal) {
+      btnModal.classList.add('calibrated-pulse');
+      btnModal.textContent = 'CENTER LOCKED ✓';
+      setTimeout(() => {
+        btnModal.classList.remove('calibrated-pulse');
+        btnModal.textContent = 'LOCK CURRENT HAND & FACE AS CENTER (C)';
+      }, 1200);
+    }
   }
 
   bindUI() {
@@ -369,6 +419,7 @@ class TableTennisApp {
     // Calibration Setup Modal
     const calibModal = document.getElementById('calibration-modal');
     const btnCalibrate = document.getElementById('btn-calibrate-hand');
+    const btnCalibSettings = document.getElementById('btn-calib-settings');
     const modalCalibClose = document.getElementById('modal-calib-close');
     const btnSaveCalib = document.getElementById('btn-save-calib-modal');
     const btnSetCenterModal = document.getElementById('btn-set-center-modal');
@@ -376,6 +427,13 @@ class TableTennisApp {
 
     if (btnCalibrate) {
       btnCalibrate.addEventListener('click', () => this.handleCalibrate());
+    }
+
+    if (btnCalibSettings && calibModal) {
+      btnCalibSettings.addEventListener('click', () => {
+        sound.ensureContext();
+        calibModal.classList.add('open');
+      });
     }
 
     if (calibModal) {
@@ -386,24 +444,25 @@ class TableTennisApp {
       });
     }
 
-    modalCalibClose.addEventListener('click', () => {
-      calibModal.classList.remove('open');
-    });
+    if (modalCalibClose) {
+      modalCalibClose.addEventListener('click', () => {
+        calibModal.classList.remove('open');
+      });
+    }
 
-    btnSaveCalib.addEventListener('click', () => {
-      calibModal.classList.remove('open');
-      this.showActionToast('SETTINGS APPLIED');
-    });
+    if (btnSaveCalib) {
+      btnSaveCalib.addEventListener('click', () => {
+        calibModal.classList.remove('open');
+        this.showActionToast('SETTINGS APPLIED');
+      });
+    }
 
     const triggerCenterLock = () => {
-      sound.ensureContext();
-      this.tracker.setNeutralCenter();
-      if (this.faceTracker) this.faceTracker.setNeutralCenter();
-      this.showActionToast('CENTER LOCKED');
+      this.triggerFullCalibration();
     };
 
-    btnSetCenterModal.addEventListener('click', triggerCenterLock);
-    btnPipQuickCenter.addEventListener('click', triggerCenterLock);
+    if (btnSetCenterModal) btnSetCenterModal.addEventListener('click', triggerCenterLock);
+    if (btnPipQuickCenter) btnPipQuickCenter.addEventListener('click', triggerCenterLock);
 
     // Calibration Sliders
     const sliderX = document.getElementById('slider-sens-x');
@@ -671,6 +730,17 @@ class TableTennisApp {
   }
 
   onCalibrationUpdate(data) {
+    if (data.status === 'calibrated') {
+      // Auto-calibration: automatically calibrate the face as well!
+      if (this.faceTracker) {
+        this.faceTracker.setNeutralCenter();
+      }
+      this.flashCalibrateButton();
+      this.showActionToast('HAND & FACE CALIBRATED ✓');
+      if (sound && sound.playCalibrate) {
+        sound.playCalibrate();
+      }
+    }
     if (data.readout) {
       const dirBadge = document.getElementById('pip-dir-badge');
       const calibDir = document.getElementById('calib-live-direction');

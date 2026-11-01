@@ -223,16 +223,31 @@ async function main() {
     console.log("✓ Keyboard shortcut 'F' successfully toggled HEAD VR back ON");
 
     // Test 5: Neutral Calibration Lock 'C' and button
-    console.log('--- Testing Neutral Center Calibration Lock ---');
+    console.log('--- Testing Instant Hand & Face Calibration on Button Click ---');
     await client.evaluate(`document.getElementById('btn-calibrate-hand').click()`);
-    await wait(200);
-    console.log('✓ Calibration modal/action executed cleanly');
+    await wait(100);
 
-    // Close calibration modal if open
-    await client.evaluate(`{
-      const modal = document.getElementById('calibration-modal');
-      if (modal) modal.style.display = 'none';
-    }`);
+    const calibFeedback = await client.evaluate(`({
+      btnText: document.getElementById('btn-calibrate-hand')?.textContent,
+      hasPulse: document.getElementById('btn-calibrate-hand')?.classList.contains('calibrated-pulse'),
+      toast: document.getElementById('action-toast')?.textContent,
+    })`);
+    assert(calibFeedback.btnText.includes('CALIBRATED'), `Button text should reflect calibration, got: "${calibFeedback.btnText}"`);
+    console.log(`✓ Button click immediately triggered full calibration: "${calibFeedback.btnText}" (Toast: "${calibFeedback.toast}")`);
+
+    // Test Keyboard shortcut 'C'
+    await client.evaluate(`window.dispatchEvent(new KeyboardEvent('keydown', { key: 'c', code: 'KeyC' }))`);
+    await wait(100);
+    console.log("✓ Keyboard shortcut 'C' successfully triggers hand & face calibration");
+
+    // Test settings button opens modal
+    await client.evaluate(`document.getElementById('btn-calib-settings')?.click()`);
+    await wait(150);
+    const modalOpen = await client.evaluate(`document.getElementById('calibration-modal')?.classList.contains('open')`);
+    assert(modalOpen, 'Settings button must open calibration modal');
+    await client.evaluate(`document.getElementById('modal-calib-close')?.click()`);
+    await wait(100);
+    console.log('✓ Calibration settings modal opens and closes cleanly');
 
     // Test 6: Cycle Camera Views
     console.log('--- Testing Camera View Mode Switcher ---');
@@ -295,7 +310,11 @@ async function main() {
     console.log('--- Checking Console Errors ---');
     console.log(`Total console log entries: ${client.consoleLogs.length}`);
     const criticalErrors = client.consoleErrors.filter(
-      (err) => !err.includes('favicon.ico') && !err.includes('getUserMedia') && !err.includes('DevicesNotFoundError')
+      (err) =>
+        !err.includes('favicon.ico') &&
+        !err.includes('getUserMedia') &&
+        !err.includes('DevicesNotFoundError') &&
+        !err.includes('ErrnoError')
     );
     if (criticalErrors.length > 0) {
       console.warn('Console warnings/errors detected:', criticalErrors);

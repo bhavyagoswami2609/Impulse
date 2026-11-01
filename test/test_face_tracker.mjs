@@ -208,4 +208,51 @@ console.log('\n--- Test 3: Three.js Camera Parallax Across Views ---');
   console.log('✓ Camera smoothly returns to exact preset baseline when head returns to center');
 }
 
+// 4. Test In-Game Button & Auto Face Calibration
+console.log('\n--- Test 4: Dynamic Face Center Recalibration on Button Click ---');
+{
+  const tracker = new FaceTracker();
+  tracker.enabled = true;
+
+  let simTime = 2000;
+  // Step with user sitting off-center (e.g. leaning left at xCenter = 0.65)
+  for (let i = 0; i < 20; i++) {
+    simTime += 16.67;
+    tracker.onDetectionResults({
+      detections: [
+        {
+          boundingBox: { xCenter: 0.65, yCenter: 0.40, width: 0.25, height: 0.30 },
+          landmarks: [],
+        },
+      ],
+    }, simTime);
+    tracker.getParallaxOffset(0.016);
+  }
+
+  // Now user clicks CALIBRATE button (calling setNeutralCenter)
+  const success = tracker.setNeutralCenter();
+  assert.strictEqual(success, true, 'setNeutralCenter() must succeed');
+
+  // Instantly, offset should be reset to (0, 0, 0)
+  const instantOffset = tracker.getParallaxOffset(0.016);
+  assert(Math.abs(instantOffset.x) < 0.01, `Parallax X must be zeroed immediately upon calibration (got ${instantOffset.x})`);
+  assert(Math.abs(instantOffset.y) < 0.01, `Parallax Y must be zeroed immediately upon calibration (got ${instantOffset.y})`);
+  assert(Math.abs(instantOffset.z) < 0.01, `Parallax Z must be zeroed immediately upon calibration (got ${instantOffset.z})`);
+  console.log('✓ Button click instantly locks current head pose as (0, 0, 0) reference');
+
+  // When user stays at that calibrated pose, offsets remain at 0
+  simTime += 16.67;
+  tracker.onDetectionResults({
+    detections: [
+      {
+        boundingBox: { xCenter: 0.65, yCenter: 0.40, width: 0.25, height: 0.30 },
+        landmarks: [],
+      },
+    ],
+  }, simTime);
+  const settledOffset = tracker.getParallaxOffset(0.016);
+  assert(Math.abs(settledOffset.x) < 0.05, 'Off-center head is now the true zero center');
+  console.log('✓ Calibrated pose stably maintained as neutral origin');
+}
+
 console.log('\n=== ALL FACE TRACKING & PARALLAX TESTS PASSED! ===');

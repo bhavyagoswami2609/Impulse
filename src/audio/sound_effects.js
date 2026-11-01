@@ -478,6 +478,33 @@ class SoundEffects {
   }
 
   /**
+   * Dual crystal chime when motion & face calibration locks
+   */
+  playCalibrate() {
+    if (!this.enabled) return;
+    this.ensureContext();
+    if (!this.ctx) return;
+
+    const t = this.ctx.currentTime;
+    [523.25, 1046.50].forEach((freq, idx) => {
+      const osc = this.ctx.createOscillator();
+      const gain = this.ctx.createGain();
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(freq, t + idx * 0.08);
+
+      gain.gain.setValueAtTime(0, t + idx * 0.08);
+      gain.gain.linearRampToValueAtTime(0.22, t + idx * 0.08 + 0.02);
+      gain.gain.exponentialRampToValueAtTime(0.001, t + idx * 0.08 + 0.18);
+
+      osc.connect(gain);
+      gain.connect(this.masterGain);
+
+      osc.start(t + idx * 0.08);
+      osc.stop(t + idx * 0.08 + 0.20);
+    });
+  }
+
+  /**
    * Air hockey striker hitting puck - crisp plastic/felt thud
    */
   playStrikerHit(intensity = 1.0) {
