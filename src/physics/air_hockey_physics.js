@@ -300,9 +300,9 @@ export class AirHockeyPhysics {
     let minZ, maxZ;
     if (strikerId === 1) {
       minZ = -HALF_LENGTH + STRIKER_RADIUS;
-      maxZ = -0.01; // Can't cross center line into P2 half
+      maxZ = -0.005; // Can reach up to the center line (Z=0) without crossing into P2 half
     } else {
-      minZ = 0.01;  // Can't cross center line into P1 half
+      minZ = 0.005;  // Can reach up to the center line (Z=0) without crossing into P1 half
       maxZ = HALF_LENGTH - STRIKER_RADIUS;
     }
     let z = Math.max(minZ, Math.min(maxZ, pos.z));

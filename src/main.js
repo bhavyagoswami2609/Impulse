@@ -39,6 +39,7 @@ class TableTennisApp {
 
     // 4. Initialize MediaPipe Hand Tracker
     this.tracker = new HandTracker({
+      gameMode: this.gameMode,
       videoElement: document.getElementById('webcam-video'),
       canvasElement: document.getElementById('webcam-canvas'),
       onStatusChange: this.onTrackingStatusChange.bind(this),
@@ -854,6 +855,9 @@ class TableTennisApp {
     if (this.gameMode === mode) return;
     this.gameMode = mode;
     this.scene.setGameMode(mode);
+    if (this.tracker) {
+      this.tracker.setGameMode(mode);
+    }
 
     const btnTennis = document.getElementById('btn-mode-tennis');
     const btnHockey = document.getElementById('btn-mode-hockey');

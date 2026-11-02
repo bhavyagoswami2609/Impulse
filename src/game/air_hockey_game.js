@@ -41,13 +41,13 @@ export class AirHockeyGame {
       minX: -this.tableHalfW + this.strikerRadius + 0.01,
       maxX: this.tableHalfW - this.strikerRadius - 0.01,
       minZ: -this.tableHalfL + this.strikerRadius + 0.01,
-      maxZ: -this.strikerRadius - 0.01, // Cannot cross centerline (Z=0)
+      maxZ: -0.005, // Striker can advance up to the midline (Z=0) without crossing into P2 half
     };
 
     this.p2Bounds = {
       minX: -this.tableHalfW + this.strikerRadius + 0.01,
       maxX: this.tableHalfW - this.strikerRadius - 0.01,
-      minZ: this.strikerRadius + 0.01,  // Cannot cross centerline (Z=0)
+      minZ: 0.005,  // Striker can advance up to the midline (Z=0) without crossing into P1 half
       maxZ: this.tableHalfL - this.strikerRadius - 0.01,
     };
 
@@ -294,7 +294,8 @@ export class AirHockeyGame {
             // Trigger committed forward strike!
             this.aiSwingTimer = 0.32;
             const forwardReach = 0.25 * (config.strikePower || 1.0);
-            this.aiTargetPos.z = Math.max(this.p2Bounds.minZ, puckZ - forwardReach);
+            const reachLimit = Math.max(this.p2Bounds.minZ, config.maxReachZ || 0.005);
+            this.aiTargetPos.z = Math.max(reachLimit, puckZ - forwardReach);
             this.aiTargetPos.x = strikeX;
           } else {
             this.aiTargetPos.x = strikeX;
@@ -399,17 +400,11 @@ export class AirHockeyGame {
     } else {
       // Client mode (P2)
       if (localPaddleTransform) {
-        const clampedX = THREE.MathUtils.clamp(
-          localPaddleTransform.position.x,
-          this.p2Bounds.minX,
-          this.p2Bounds.maxX
-        );
-        const clampedZ = THREE.MathUtils.clamp(
-          localPaddleTransform.position.z,
-          this.p2Bounds.minZ,
-          this.p2Bounds.maxZ
-        );
-        this.p2Pos.set(clampedX, AIR_HOCKEY_TABLE_HEIGHT, clampedZ);
+        const clampedP2 = this.physics.clampStrikerPosition(2, {
+          x: localPaddleTransform.position.x,
+          z: localPaddleTransform.position.z,
+        });
+        this.p2Pos.set(clampedP2.x, AIR_HOCKEY_TABLE_HEIGHT, clampedP2.z);
 
         if (this.scene.striker2) {
           this.scene.striker2.position.copy(this.p2Pos);
@@ -417,7 +412,7 @@ export class AirHockeyGame {
 
         this.multiplayer.send({
           type: 'hockey_client_input',
-          pos: [clampedX, AIR_HOCKEY_TABLE_HEIGHT, clampedZ],
+          pos: [clampedP2.x, AIR_HOCKEY_TABLE_HEIGHT, clampedP2.z],
         });
       }
 

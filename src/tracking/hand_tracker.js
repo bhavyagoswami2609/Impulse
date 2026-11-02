@@ -153,6 +153,7 @@ export class HandTracker {
     // Control mode: starts as 'webcam' by default, falls back to 'mouse' if camera unavailable or toggled off
     this.controlMode = 'webcam';
     this.playerRole = 'host'; // 'host' (P1, South) or 'client' (P2, North)
+    this.gameMode = options.gameMode || 'tennis';
 
     // Neutral baseline for relative tracking
     this.neutralHand = {
@@ -174,10 +175,10 @@ export class HandTracker {
     };
 
     // 1D One Euro Filters for x, y, z, and Y-axis yaw
-    // beta=0.16 on xFilter eliminates lag when quickly lunging/reaching for wide shots
+    // beta=0.16 on xFilter and zFilter eliminates lag when quickly lunging/reaching for wide shots and midline forward strikes
     this.xFilter = new OneEuroFilter(1.2, 0.16, 1.0);
     this.yFilter = new OneEuroFilter(1.2, 0.04, 1.0);
-    this.zFilter = new OneEuroFilter(1.2, 0.04, 1.0);
+    this.zFilter = new OneEuroFilter(1.2, 0.16, 1.0);
     this.yawFilter = new OneEuroFilter(1.2, 0.04, 1.0);
 
     // Dynamic rotation & gesture states
@@ -188,9 +189,11 @@ export class HandTracker {
     this.activeBallHeight = null;
     this.prevRawX = null;
 
-    // Court limits: expanded X bounds (TABLE_WIDTH * 0.82 = 1.25m vs table edge 0.76m)
-    // and lowered minY so the paddle can comfortably reach down to scoop low dipping wide balls
-    this.courtLimits = {
+    // Court limits:
+    // - Table Tennis: expanded X bounds (TABLE_WIDTH * 0.82 = 1.25m vs table edge 0.76m)
+    // - Air Hockey: Table is 2.14m long (Z: -1.07m to +1.07m, midline Z = 0), width 1.10m (X: -0.55m to +0.55m)
+    //   Striker radius is 0.05m. Striker center can advance all the way up to the midline (-0.005m for P1, +0.005m for P2).
+    this.courtLimitsTennis = {
       p1: {
         minX: -TABLE_WIDTH * 0.82,
         maxX: TABLE_WIDTH * 0.82,
@@ -209,8 +212,32 @@ export class HandTracker {
       },
     };
 
+    this.courtLimitsHockey = {
+      p1: {
+        minX: -0.50,
+        maxX: 0.50,
+        minY: 0.80,
+        maxY: 1.10,
+        minZ: -1.02,
+        maxZ: -0.005, // Can go up to the midline (Z=0)
+      },
+      p2: {
+        minX: -0.50,
+        maxX: 0.50,
+        minY: 0.80,
+        maxY: 1.10,
+        minZ: 0.005,  // Can go up to the midline (Z=0)
+        maxZ: 1.02,
+      },
+    };
+
+    this.courtLimits = this.gameMode === 'hockey' ? this.courtLimitsHockey : this.courtLimitsTennis;
+
     // Position & Velocity State
-    this.basePosition = new THREE.Vector3(0, 0.95, -1.45);
+    const isHockey = this.gameMode === 'hockey';
+    const baseY = isHockey ? 0.82 : 0.95;
+    const baseZ = isHockey ? -0.65 : -1.45;
+    this.basePosition = new THREE.Vector3(0, baseY, baseZ);
     this.targetPosition = this.basePosition.clone();
     this.currentPosition = this.basePosition.clone();
     this.previousPosition = this.basePosition.clone();
@@ -221,7 +248,7 @@ export class HandTracker {
     this.currentQuaternion = new THREE.Quaternion();
 
     // Mouse fallback tracking state
-    this.mouseTarget = new THREE.Vector3(0, 0.95, -1.45);
+    this.mouseTarget = this.basePosition.clone();
     this.isMouseDown = false;
     this.swingBoostTimer = 0;
 
@@ -231,15 +258,40 @@ export class HandTracker {
     this.setupMouseEvents();
   }
 
+  setGameMode(mode) {
+    if (this.gameMode === mode) return;
+    this.gameMode = mode;
+    this.courtLimits = mode === 'hockey' ? this.courtLimitsHockey : this.courtLimitsTennis;
+
+    const isHockey = mode === 'hockey';
+    const baseY = isHockey ? 0.82 : 0.95;
+    const baseZ = isHockey
+      ? (this.playerRole === 'client' ? 0.65 : -0.65)
+      : (this.playerRole === 'client' ? 1.45 : -1.45);
+
+    this.basePosition.set(0, baseY, baseZ);
+    this.mouseTarget.set(0, baseY, baseZ);
+    this.targetPosition.copy(this.basePosition);
+    this.currentPosition.copy(this.basePosition);
+    this.previousPosition.copy(this.basePosition);
+    this.velocity.set(0, 0, 0);
+
+    this.xFilter.reset();
+    this.yFilter.reset();
+    this.zFilter.reset();
+    this.yawFilter.reset();
+  }
+
   setPlayerRole(role) {
     this.playerRole = role;
-    if (role === 'client') {
-      this.basePosition.set(0, 0.95, 1.45);
-      this.mouseTarget.set(0, 0.95, 1.45);
-    } else {
-      this.basePosition.set(0, 0.95, -1.45);
-      this.mouseTarget.set(0, 0.95, -1.45);
-    }
+    const isHockey = this.gameMode === 'hockey';
+    const baseY = isHockey ? 0.82 : 0.95;
+    const baseZ = isHockey
+      ? (role === 'client' ? 0.65 : -0.65)
+      : (role === 'client' ? 1.45 : -1.45);
+
+    this.basePosition.set(0, baseY, baseZ);
+    this.mouseTarget.set(0, baseY, baseZ);
     this.targetPosition.copy(this.basePosition);
     this.currentPosition.copy(this.basePosition);
     this.previousPosition.copy(this.basePosition);
@@ -293,7 +345,8 @@ export class HandTracker {
       // Host camera is at -Z looking towards +Z:
       // Mouse moving right (normX > 0) maps to screen right (world negative X: -courtX)
       // Mouse moving left (normX < 0) maps to screen left (world positive X: -courtX)
-      const courtX = normX * (TABLE_WIDTH * 0.82);
+      const isHockey = this.gameMode === 'hockey';
+      const courtX = isHockey ? normX * 0.50 : normX * (TABLE_WIDTH * 0.82);
       const targetX = THREE.MathUtils.clamp(
         this.playerRole === 'client' ? courtX : -courtX,
         limits.minX,
@@ -304,17 +357,32 @@ export class HandTracker {
       // Moving mouse UP on screen (normY > 0) pushes FORWARD (+Z for host, -Z for client)
       // Moving mouse DOWN on screen (normY < 0) pulls BACKWARD (-Z for host, +Z for client)
       let targetZ;
-      if (this.playerRole === 'host') {
-        targetZ = THREE.MathUtils.clamp(-1.15 + normY * 0.65, limits.minZ, limits.maxZ);
+      if (isHockey) {
+        // Air Hockey: P1 ranges from goal (-1.02m) up to the midline (-0.005m)
+        // Moving mouse up (normY > 0) advances towards the midline
+        // Moving mouse down (normY < 0) retreats towards the goal
+        const centerOffset = this.playerRole === 'client' ? 0.5125 : -0.5125;
+        const forwardReach = normY * 0.52;
+        if (this.playerRole === 'host') {
+          targetZ = THREE.MathUtils.clamp(centerOffset + forwardReach, limits.minZ, limits.maxZ);
+        } else {
+          targetZ = THREE.MathUtils.clamp(centerOffset - forwardReach, limits.minZ, limits.maxZ);
+        }
       } else {
-        targetZ = THREE.MathUtils.clamp(1.15 - normY * 0.65, limits.minZ, limits.maxZ);
+        if (this.playerRole === 'host') {
+          targetZ = THREE.MathUtils.clamp(-1.15 + normY * 0.65, limits.minZ, limits.maxZ);
+        } else {
+          targetZ = THREE.MathUtils.clamp(1.15 - normY * 0.65, limits.minZ, limits.maxZ);
+        }
       }
 
-      const targetY = THREE.MathUtils.clamp(
-        TABLE_HEIGHT + 0.16 + normY * 0.14,
-        limits.minY,
-        limits.maxY
-      );
+      const targetY = isHockey
+        ? 0.82
+        : THREE.MathUtils.clamp(
+            TABLE_HEIGHT + 0.16 + normY * 0.14,
+            limits.minY,
+            limits.maxY
+          );
 
       this.mouseTarget.set(targetX, targetY, targetZ);
       this.targetPosition.copy(this.mouseTarget);
@@ -782,7 +850,10 @@ export class HandTracker {
       const rawSpeedX = dt > 0.001 ? Math.abs(userX - (this.prevRawX !== null ? this.prevRawX : this.neutralHand.x)) / dt : 0;
       this.prevRawX = userX;
       const fastReachBoost = THREE.MathUtils.clamp(rawSpeedX * 0.22, 0, 0.45);
-      const reachScale = (TABLE_WIDTH * 0.90) * (1.0 + fastReachBoost);
+      const isHockey = this.gameMode === 'hockey';
+      const reachScale = isHockey
+        ? 0.52 * (1.0 + fastReachBoost)
+        : (TABLE_WIDTH * 0.90) * (1.0 + fastReachBoost);
 
       // Forward/Back movement (natural physical depth + forward reach):
       // Moving physical hand FORWARD toward camera (deltaDepth > 0) OR forward/up (deltaY > 0) moves forward (+Z for P1)
@@ -797,17 +868,32 @@ export class HandTracker {
 
       // Map Forward/Backward movement to Z-Axis:
       let targetZ;
-      if (this.playerRole === 'host') {
-        targetZ = THREE.MathUtils.clamp(-1.15 + forwardMotion * 0.95, limits.minZ, limits.maxZ);
+      if (isHockey) {
+        // Air hockey forward reach: striker can go all the way up to the midline
+        const baseZ = this.playerRole === 'client' ? 0.58 : -0.58;
+        if (this.playerRole === 'host') {
+          targetZ = THREE.MathUtils.clamp(baseZ + forwardMotion * 1.35, limits.minZ, limits.maxZ);
+        } else {
+          targetZ = THREE.MathUtils.clamp(baseZ - forwardMotion * 1.35, limits.minZ, limits.maxZ);
+        }
       } else {
-        targetZ = THREE.MathUtils.clamp(1.15 - forwardMotion * 0.95, limits.minZ, limits.maxZ);
+        if (this.playerRole === 'host') {
+          targetZ = THREE.MathUtils.clamp(-1.15 + forwardMotion * 0.95, limits.minZ, limits.maxZ);
+        } else {
+          targetZ = THREE.MathUtils.clamp(1.15 - forwardMotion * 0.95, limits.minZ, limits.maxZ);
+        }
       }
 
-      // Table Tennis vertical paddle height: auto-track ball height (offset by blade center 0.082m) or comfortable height
-      const baseH = this.activeBallHeight !== null
-        ? THREE.MathUtils.clamp(this.activeBallHeight - 0.082, limits.minY, limits.maxY)
-        : (TABLE_HEIGHT + 0.12);
-      const targetY = THREE.MathUtils.clamp(baseH + deltaY * 0.25, limits.minY, limits.maxY);
+      // Vertical height:
+      const targetY = isHockey
+        ? 0.82
+        : THREE.MathUtils.clamp(
+            (this.activeBallHeight !== null
+              ? THREE.MathUtils.clamp(this.activeBallHeight - 0.082, limits.minY, limits.maxY)
+              : (TABLE_HEIGHT + 0.12)) + deltaY * 0.25,
+            limits.minY,
+            limits.maxY
+          );
 
       this.targetPosition.set(targetX, targetY, targetZ);
 
@@ -990,6 +1076,8 @@ export class HandTracker {
         this.swingBoostTimer -= dt;
         const forwardDir = this.playerRole === 'host' ? 0.38 : -0.38;
         mousePos.z += forwardDir * Math.sin((this.swingBoostTimer / 0.22) * Math.PI);
+        const limits = this.playerRole === 'host' ? this.courtLimits.p1 : this.courtLimits.p2;
+        mousePos.z = THREE.MathUtils.clamp(mousePos.z, limits.minZ, limits.maxZ);
       }
       this.targetPosition.copy(mousePos);
 
