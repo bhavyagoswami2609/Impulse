@@ -1039,6 +1039,19 @@ class TableTennisApp {
     const deltaTime = Math.min((now - this.lastTime) / 1000, 0.05);
     this.lastTime = now;
 
+    // 0. Inform tracker of oncoming ball height during Table Tennis rally for natural vertical interception
+    if (this.gameMode === 'tennis' && this.physics && this.physics.ballBody && this.tracker) {
+      const bPos = this.physics.ballBody.position;
+      const bVel = this.physics.ballBody.velocity;
+      if (this.game && this.game.state === 1 /* RALLY */ && bVel.z < 0 && bPos.z < 0.2) {
+        this.tracker.activeBallHeight = bPos.y;
+      } else {
+        this.tracker.activeBallHeight = null;
+      }
+    } else if (this.tracker) {
+      this.tracker.activeBallHeight = null;
+    }
+
     // 1. Get smoothly filtered paddle/striker transform from Hand Tracker or Mouse
     const localPaddleTransform = this.tracker.getTransform(deltaTime);
 

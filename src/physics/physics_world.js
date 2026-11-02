@@ -253,20 +253,27 @@ export class PhysicsWorld {
       const closingSpeed = -(relVelX * normX + relVelZ * normZ);
 
       // Strict Front-Face Only:
-      // 1. Ball must be in FRONT of the racket face (dz >= 0.005)
+      // 1. Ball must be in FRONT of the racket face (dz >= 0.003)
       // 2. Ball must be on the front side of the angled plane (distAlongNormal >= 0.005)
       // 3. Front face must be oriented towards opponent (normZ > 0.35)
       // 4. Relative motion must be closing into front face (closingSpeed > 0.15)
-      // 5. Racket must NOT be retreating backward away from net (p1Vel.z >= -0.05)
+      // 5. Racket must NOT be retreating backward away from net (unless making an active lateral lunge/reach)
+      const isLateralReach = Math.abs(p1Vel.x) > 0.35 || Math.abs(p1Pos.x) > (TABLE_WIDTH * 0.40) || Math.abs(bPos.x) > (TABLE_WIDTH * 0.40);
+      const isNotRetreating = p1Vel.z >= -0.16 || isLateralReach;
+
       const isFrontFaceContact = (
-        dz >= 0.005 &&
-        dz <= 0.15 &&
+        dz >= 0.003 &&
+        dz <= 0.18 &&
         distAlongNormal >= 0.005 &&
         normZ > 0.35 &&
         closingSpeed > 0.15 &&
-        p1Vel.z >= -0.05
+        isNotRetreating
       );
-      if (isFrontFaceContact && dist2D < 0.14 && now - this.lastPaddleHitTime > 160) {
+
+      // Hit radius: default 0.14m, expanded to 0.165m when lunging out for wide shots
+      const maxHitDist = isLateralReach ? 0.165 : 0.14;
+
+      if (isFrontFaceContact && dist2D < maxHitDist && now - this.lastPaddleHitTime > 160) {
         this.lastPaddleHitTime = now;
 
         const swingForward = Math.max(0, p1Vel.z);
@@ -335,20 +342,27 @@ export class PhysicsWorld {
       const closingSpeed = -(relVelX * normX + relVelZ * normZ);
 
       // Strict Front-Face Only:
-      // 1. Ball must be in FRONT of Player 2's racket face (dz <= -0.005)
+      // 1. Ball must be in FRONT of Player 2's racket face (dz <= -0.003)
       // 2. Ball must be on front side of angled plane (distAlongNormal >= 0.005)
       // 3. Front face must be oriented towards Player 1 (normZ < -0.35)
       // 4. Relative motion closing into front face (closingSpeed > 0.15)
-      // 5. Racket must NOT be pulling backwards towards +Z (p2Vel.z <= 0.05)
+      // 5. Racket must NOT be pulling backwards towards +Z (unless making an active lateral lunge/reach)
+      const isP2LateralReach = Math.abs(p2Vel.x) > 0.35 || Math.abs(p2Pos.x) > (TABLE_WIDTH * 0.40) || Math.abs(bPos.x) > (TABLE_WIDTH * 0.40);
+      const isP2NotRetreating = p2Vel.z <= 0.16 || isP2LateralReach;
+
       const isFrontFaceContact = (
-        dz <= -0.005 &&
-        dz >= -0.15 &&
+        dz <= -0.003 &&
+        dz >= -0.18 &&
         distAlongNormal >= 0.005 &&
         normZ < -0.35 &&
         closingSpeed > 0.15 &&
-        p2Vel.z <= 0.05
+        isP2NotRetreating
       );
-      if (isFrontFaceContact && dist2D < 0.14 && now - this.lastPaddleHitTime > 160) {
+
+      // Hit radius: default 0.14m, expanded to 0.165m when lunging out for wide shots
+      const maxHitDist = isP2LateralReach ? 0.165 : 0.14;
+
+      if (isFrontFaceContact && dist2D < maxHitDist && now - this.lastPaddleHitTime > 160) {
         this.lastPaddleHitTime = now;
 
         const swingForward = Math.max(0, -p2Vel.z);

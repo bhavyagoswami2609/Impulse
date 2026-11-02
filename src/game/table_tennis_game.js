@@ -201,24 +201,31 @@ export class TableTennisGame {
   isBallOffTable(ballPos, dt = 0) {
     if (!ballPos) return false;
 
-    const isOutsideX = Math.abs(ballPos.x) > TABLE_WIDTH / 2 + 0.08;
-    const isOutsideZ = Math.abs(ballPos.z) > TABLE_LENGTH / 2 + 0.08;
-    const isBelowTable = ballPos.y < TABLE_HEIGHT - 0.04;
-
-    // Has dropped below table top outside table bounds
-    if (isBelowTable && (isOutsideX || isOutsideZ)) {
-      this.deadBallTimer = 0;
-      return true;
-    }
-
-    // Or reached the floor
+    // 1. Reached the floor
     if (ballPos.y <= 0.08) {
       this.deadBallTimer = 0;
       return true;
     }
 
-    // Or flown far out of bounds past the courts
-    if (Math.abs(ballPos.z) > 2.5 || Math.abs(ballPos.x) > 1.8) {
+    // 2. Flown far out of bounds past any playable reach
+    if (Math.abs(ballPos.z) > 2.6 || Math.abs(ballPos.x) > 2.2) {
+      this.deadBallTimer = 0;
+      return true;
+    }
+
+    const isOutsideZ = Math.abs(ballPos.z) > TABLE_LENGTH / 2 + 0.08;
+    const isOutsideX = Math.abs(ballPos.x) > TABLE_WIDTH / 2 + 0.08;
+    const isBelowTable = ballPos.y < TABLE_HEIGHT - 0.04;
+
+    // 3. Past the back endline and dropped below table height
+    if (isBelowTable && isOutsideZ) {
+      this.deadBallTimer = 0;
+      return true;
+    }
+
+    // 4. Lateral shot: if it never bounced on receiver court, leaving table laterally is OUT
+    const receiverBounces = this.lastHitter === 1 ? this.bouncesP2 : this.bouncesP1;
+    if (receiverBounces === 0 && isBelowTable && isOutsideX) {
       this.deadBallTimer = 0;
       return true;
     }

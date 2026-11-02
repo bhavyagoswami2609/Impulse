@@ -167,14 +167,15 @@ export class HandTracker {
     // Direct mapping by default: physical hand moves right -> screen paddle/striker moves right
     this.invertX = false;
     this.settings = {
-      sensitivityX: 2.4,
+      sensitivityX: 2.8,
       sensitivityY: 2.0,
       sensitivityZ: 2.0,
       smoothSpeed: 28.0,
     };
 
     // 1D One Euro Filters for x, y, z, and Y-axis yaw
-    this.xFilter = new OneEuroFilter(1.2, 0.04, 1.0);
+    // beta=0.16 on xFilter eliminates lag when quickly lunging/reaching for wide shots
+    this.xFilter = new OneEuroFilter(1.2, 0.16, 1.0);
     this.yFilter = new OneEuroFilter(1.2, 0.04, 1.0);
     this.zFilter = new OneEuroFilter(1.2, 0.04, 1.0);
     this.yawFilter = new OneEuroFilter(1.2, 0.04, 1.0);
@@ -185,21 +186,23 @@ export class HandTracker {
     this.wasHandOpen = false;
     this.justOpenedHand = false;
     this.activeBallHeight = null;
+    this.prevRawX = null;
 
-    // Court limits
+    // Court limits: expanded X bounds (TABLE_WIDTH * 0.82 = 1.25m vs table edge 0.76m)
+    // and lowered minY so the paddle can comfortably reach down to scoop low dipping wide balls
     this.courtLimits = {
       p1: {
-        minX: -TABLE_WIDTH * 0.70,
-        maxX: TABLE_WIDTH * 0.70,
-        minY: TABLE_HEIGHT + 0.04,
+        minX: -TABLE_WIDTH * 0.82,
+        maxX: TABLE_WIDTH * 0.82,
+        minY: TABLE_HEIGHT - 0.28,
         maxY: TABLE_HEIGHT + 0.65,
         minZ: -TABLE_LENGTH * 0.75,
         maxZ: -0.35,
       },
       p2: {
-        minX: -TABLE_WIDTH * 0.70,
-        maxX: TABLE_WIDTH * 0.70,
-        minY: TABLE_HEIGHT + 0.04,
+        minX: -TABLE_WIDTH * 0.82,
+        maxX: TABLE_WIDTH * 0.82,
+        minY: TABLE_HEIGHT - 0.28,
         maxY: TABLE_HEIGHT + 0.65,
         minZ: 0.35,
         maxZ: TABLE_LENGTH * 0.75,
@@ -290,7 +293,7 @@ export class HandTracker {
       // Host camera is at -Z looking towards +Z:
       // Mouse moving right (normX > 0) maps to screen right (world negative X: -courtX)
       // Mouse moving left (normX < 0) maps to screen left (world positive X: -courtX)
-      const courtX = normX * (TABLE_WIDTH * 0.70);
+      const courtX = normX * (TABLE_WIDTH * 0.82);
       const targetX = THREE.MathUtils.clamp(
         this.playerRole === 'client' ? courtX : -courtX,
         limits.minX,
@@ -774,6 +777,13 @@ export class HandTracker {
       const deltaY = (userY - this.neutralHand.y) * this.settings.sensitivityY;
       const deltaDepth = ((userDepth - this.neutralHand.depth) / Math.max(0.04, this.neutralHand.depth)) * (this.settings.sensitivityZ || 2.0);
 
+      // Fast lateral reach dynamic boost:
+      // When reaching fast laterally, extend reach projection so fast reaches easily reach farther than the right/left table edges
+      const rawSpeedX = dt > 0.001 ? Math.abs(userX - (this.prevRawX !== null ? this.prevRawX : this.neutralHand.x)) / dt : 0;
+      this.prevRawX = userX;
+      const fastReachBoost = THREE.MathUtils.clamp(rawSpeedX * 0.22, 0, 0.45);
+      const reachScale = (TABLE_WIDTH * 0.90) * (1.0 + fastReachBoost);
+
       // Forward/Back movement (natural physical depth + forward reach):
       // Moving physical hand FORWARD toward camera (deltaDepth > 0) OR forward/up (deltaY > 0) moves forward (+Z for P1)
       // Pulling hand BACKWARD away from camera (deltaDepth < 0) OR backward/down (deltaY < 0) pulls backward (-Z for P1)
@@ -781,8 +791,8 @@ export class HandTracker {
 
       const limits = this.playerRole === 'host' ? this.courtLimits.p1 : this.courtLimits.p2;
 
-      // Horizontal court coordinate: moving physical hand right maps to screen right (-deltaX)
-      const courtX = (this.playerRole === 'client' ? deltaX : -deltaX) * (TABLE_WIDTH * 0.70);
+      // Horizontal court coordinate: moving physical hand right maps to screen right (-deltaX for host)
+      const courtX = (this.playerRole === 'client' ? deltaX : -deltaX) * reachScale;
       const targetX = THREE.MathUtils.clamp(courtX, limits.minX, limits.maxX);
 
       // Map Forward/Backward movement to Z-Axis:
@@ -793,8 +803,10 @@ export class HandTracker {
         targetZ = THREE.MathUtils.clamp(1.15 - forwardMotion * 0.95, limits.minZ, limits.maxZ);
       }
 
-      // Table Tennis vertical paddle height: auto-track ball height or comfortable height
-      const baseH = this.activeBallHeight ?? (TABLE_HEIGHT + 0.12);
+      // Table Tennis vertical paddle height: auto-track ball height (offset by blade center 0.082m) or comfortable height
+      const baseH = this.activeBallHeight !== null
+        ? THREE.MathUtils.clamp(this.activeBallHeight - 0.082, limits.minY, limits.maxY)
+        : (TABLE_HEIGHT + 0.12);
       const targetY = THREE.MathUtils.clamp(baseH + deltaY * 0.25, limits.minY, limits.maxY);
 
       this.targetPosition.set(targetX, targetY, targetZ);
@@ -982,7 +994,7 @@ export class HandTracker {
       this.targetPosition.copy(mousePos);
 
       // In mouse mode, subtle Y-axis tilt based on court X position
-      const tiltX = (this.currentPosition.x / (TABLE_WIDTH * 0.70)) * 0.35;
+      const tiltX = (this.currentPosition.x / (TABLE_WIDTH * 0.82)) * 0.35;
       this.currentYaw = this.playerRole === 'client' ? -tiltX : tiltX;
       const mouseEuler = new THREE.Euler(
         0,
