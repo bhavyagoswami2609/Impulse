@@ -355,21 +355,44 @@ console.log('\n--- Test 9: Deuce & Advantage Rule Compliance (ITTF 2.11, 2.13.4)
 }
 
 // =========================================================================
-// TEST 10: Fault on Own Table Bounce (ITTF 2.10.1.3)
+// TEST 10: Ball Bounces on Table and Bounces One Time on Other Side of Net As Well
 // =========================================================================
-console.log('\n--- Test 10: Fault on Own Table Bounce ---');
+console.log('\n--- Test 10: Ball Can Bounce One Time on Other Side of Net As Well ---');
 {
-  const { game, toasts } = createMockGame();
+  const { game, physics } = createMockGame();
   game.state = GAME_STATES.RALLY;
   game.isServiceInProgress = false;
   game.lastHitter = 1; // P1 struck the ball
 
-  // Ball bounces on P1's own table side (side 1) instead of going over to P2's side!
+  // 1st bounce: Ball bounces on P1's side of the table (side 1)
   game.handleTableBounce({ x: 0, y: TABLE_HEIGHT, z: -0.5 }, 1);
-  assert.strictEqual(game.scores[0], 0, 'P1 should not score for bouncing on own table');
-  assert.strictEqual(game.scores[1], 1, 'P2 awarded point for P1 bouncing on own table');
-  assert(toasts.some(t => t.includes('FAULT - OWN TABLE')), 'Toast announced FAULT - OWN TABLE');
-  console.log('✓ PASS: Bouncing ball on own table immediately awarded point to opponent!');
+  assert.strictEqual(game.scores[0], 0, 'No point yet after 1st bounce on hitter side');
+  assert.strictEqual(game.scores[1], 0, 'No point yet after 1st bounce on hitter side');
+  assert.strictEqual(game.bouncesP1, 1, 'bouncesP1 should be 1');
+
+  // 2nd bounce: Ball crosses net and bounces one time on the other side of the net as well (side 2)!
+  game.handleTableBounce({ x: 0, y: TABLE_HEIGHT, z: 0.5 }, 2);
+  assert.strictEqual(game.scores[0], 0, 'Play continues so receiver can return the ball');
+  assert.strictEqual(game.scores[1], 0, 'Play continues so receiver can return the ball');
+  assert.strictEqual(game.bouncesP2, 1, 'bouncesP2 should be 1');
+
+  // Receiver P2 misses, ball leaves table: P1 is awarded the WINNER point!
+  physics.ballBody.position.set(0, TABLE_HEIGHT - 0.05, TABLE_LENGTH / 2 + 0.15);
+  game.handleBallLeftTable();
+  assert.strictEqual(game.scores[0], 1, 'P1 awarded point after ball bounced on both sides and left table');
+  assert.strictEqual(game.scores[1], 0);
+
+  // Subtest: If ball bounces a 2nd time on hitter's side without crossing net, fault is called
+  const { game: gameB } = createMockGame();
+  gameB.state = GAME_STATES.RALLY;
+  gameB.isServiceInProgress = false;
+  gameB.lastHitter = 1;
+  gameB.handleTableBounce({ x: 0, y: TABLE_HEIGHT, z: -0.5 }, 1); // 1st bounce on hitter side
+  assert.strictEqual(gameB.scores[1], 0);
+  gameB.handleTableBounce({ x: 0, y: TABLE_HEIGHT, z: -0.4 }, 1); // 2nd bounce on hitter side
+  assert.strictEqual(gameB.scores[1], 1, 'P2 awarded point for double bounce on hitter side');
+
+  console.log('✓ PASS: Ball can bounce on table and bounce one time on the other side of the net as well!');
 }
 
 // =========================================================================

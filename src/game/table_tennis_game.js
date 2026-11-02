@@ -195,19 +195,33 @@ export class TableTennisGame {
     }
 
     // B. Normal Rally Phase Validation
-    // Rule: ITTF 2.10.1.3 - Ball cannot bounce on the hitter's own table side after being struck
-    if (side === this.lastHitter) {
-      const opponent = this.lastHitter === 1 ? 2 : 1;
-      this.awardPoint(opponent, 'FAULT - OWN TABLE');
-      return;
-    }
+    // When the ball bounces on the table, it can bounce one time on the other side of the net as well!
+    const isHitterSide = side === this.lastHitter;
+    const receiverBounces = this.lastHitter === 1 ? this.bouncesP2 : this.bouncesP1;
+    const hitterBounces = this.lastHitter === 1 ? this.bouncesP1 : this.bouncesP2;
 
-    // Rule: ITTF 2.10.1.1 - Double bounce on receiver side is an immediate point to the hitter
-    if (side === 1 && this.bouncesP1 >= 2) {
-      this.awardPoint(2, 'DOUBLE BOUNCE');
+    if (isHitterSide) {
+      if (receiverBounces >= 1) {
+        // Ball had already bounced on receiver court and returned back without receiver returning it -> hitter point
+        this.awardPoint(this.lastHitter, 'WINNER');
+        return;
+      }
+      if (hitterBounces >= 2) {
+        // Ball bounced twice on hitter's side without crossing the net -> point to opponent
+        const opponent = this.lastHitter === 1 ? 2 : 1;
+        this.awardPoint(opponent, 'DOUBLE BOUNCE');
+        return;
+      }
+      // First bounce on hitter's side: play continues so it can bounce one time on the other side of the net as well!
       return;
-    } else if (side === 2 && this.bouncesP2 >= 2) {
-      this.awardPoint(1, 'DOUBLE BOUNCE');
+    } else {
+      // Bounced on receiver side:
+      if (receiverBounces >= 2) {
+        // Receiver allowed double bounce on their side without returning -> point to hitter
+        this.awardPoint(this.lastHitter, 'DOUBLE BOUNCE');
+        return;
+      }
+      // First bounce on receiver side: play continues (receiver can return it)
       return;
     }
   }
