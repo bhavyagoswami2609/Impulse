@@ -18,6 +18,7 @@ export class PhysicsWorld {
         onBallBounceTable: (position, side) => {},
         onBallHitNet: () => {},
         onBallHitFloor: () => {},
+        onBallHitTableSide: (position) => {},
       },
       callbacks
     );
@@ -174,6 +175,37 @@ export class PhysicsWorld {
       const targetName = body.name || '';
 
       if (targetName === 'table') {
+        let isVerticalSide = false;
+        const bPos = this.ballBody.position;
+
+        if (event.contact && event.contact.ni) {
+          const isBallBi = event.contact.bi === this.ballBody;
+          const normalY = isBallBi ? -event.contact.ni.y : event.contact.ni.y;
+          const normalX = isBallBi ? -event.contact.ni.x : event.contact.ni.x;
+          const normalZ = isBallBi ? -event.contact.ni.z : event.contact.ni.z;
+
+          // If contact normal is predominantly horizontal (|normalX| > 0.65 or |normalZ| > 0.65)
+          // and has negligible/negative upward component (normalY < 0.35), it hit the vertical side
+          if (normalY < 0.35 && (Math.abs(normalX) > 0.65 || Math.abs(normalZ) > 0.65)) {
+            isVerticalSide = true;
+          }
+        }
+
+        // Secondary geometric check: if ball center is strictly below table top surface
+        if (bPos.y < TABLE_HEIGHT - 0.008) {
+          isVerticalSide = true;
+        }
+
+        if (isVerticalSide) {
+          // Rule: Edge balls on top flat edge/corner are IN.
+          // However, hitting the vertical side of the table leaf is OUT!
+          sound.playTableBounce(0.5);
+          if (this.callbacks.onBallHitTableSide) {
+            this.callbacks.onBallHitTableSide(bPos);
+          }
+          return;
+        }
+
         const vy = Math.abs(this.ballBody.velocity.y);
         if (vy > 0.28 && now - this.lastTableBounceTime > 220) {
           this.lastTableBounceTime = now;

@@ -33,6 +33,7 @@ export class TableTennisGame {
     this.bouncesP2 = 0;
     this.isServiceInProgress = true;
     this.rallyLength = 0;
+    this.matchType = options.matchType || 'singles'; // 'singles' or 'doubles'
 
     // Smash meters (0 to 100)
     this.smashEnergy = [0, 0];
@@ -108,6 +109,35 @@ export class TableTennisGame {
     this.physics.callbacks.onBallHitFloor = () => {
       this.handleFloorHit();
     };
+
+    this.physics.callbacks.onBallHitTableSide = (pos) => {
+      this.handleTableSideHit(pos);
+    };
+  }
+
+  setMatchType(type) {
+    if (type === 'singles' || type === 'doubles') {
+      this.matchType = type;
+    }
+  }
+
+  /**
+   * Called when ball contacts the vertical side of the table leaf below the top edge.
+   * Rule: Edge balls on the top flat edge/corner are in; hitting the vertical side is out!
+   */
+  handleTableSideHit(pos) {
+    if (this.state !== GAME_STATES.RALLY) return;
+    if (this.multiplayer.role === 'client') return;
+
+    this.scene.triggerImpact(new THREE.Vector3(pos.x, pos.y, pos.z), 0xff2200);
+
+    if (this.isServiceInProgress) {
+      const receiver = 3 - this.server;
+      this.awardPoint(receiver, 'FAULT - TABLE SIDE');
+    } else {
+      const opponent = this.lastHitter === 1 ? 2 : 1;
+      this.awardPoint(opponent, 'OUT - TABLE SIDE');
+    }
   }
 
   /**
@@ -149,6 +179,22 @@ export class TableTennisGame {
           this.awardPoint(2, 'FAULT - DOUBLE BOUNCE');
           return;
         }
+
+        // Rule: In singles, the serve can land anywhere on the opponent's side.
+        // In doubles, the ball must be served diagonally from right-hand box to right-hand box.
+        if (this.matchType === 'doubles') {
+          if (side === 1 && pos.x > 0) {
+            // Must serve from right-hand box (x <= 0 for P1)
+            this.awardPoint(2, 'FAULT - WRONG SERVICE BOX');
+            return;
+          }
+          if (side === 2 && pos.x < 0) {
+            // Must land in opponent's right-hand box (x >= 0 for P2)
+            this.awardPoint(2, 'FAULT - WRONG SERVICE BOX');
+            return;
+          }
+        }
+
         if (side === 2) {
           if (this.bouncesP1 === 0) {
             // Did not bounce on server's table first
@@ -173,6 +219,21 @@ export class TableTennisGame {
           this.awardPoint(1, 'FAULT - DOUBLE BOUNCE');
           return;
         }
+
+        // Rule: Doubles placement for Server 2 (diagonal right-to-right box)
+        if (this.matchType === 'doubles') {
+          if (side === 2 && pos.x < 0) {
+            // Must serve from right-hand box (x >= 0 for P2)
+            this.awardPoint(1, 'FAULT - WRONG SERVICE BOX');
+            return;
+          }
+          if (side === 1 && pos.x > 0) {
+            // Must land in opponent's right-hand box (x <= 0 for P1)
+            this.awardPoint(1, 'FAULT - WRONG SERVICE BOX');
+            return;
+          }
+        }
+
         if (side === 1) {
           if (this.bouncesP2 === 0) {
             // Did not bounce on server's table first
@@ -235,16 +296,52 @@ export class TableTennisGame {
 
     if (this.multiplayer.role === 'client') return;
 
-    if (this.state === GAME_STATES.SERVE_WAIT) {
-      // In SERVE_WAIT, passive paddle collisions must NEVER start the rally or launch the ball
+    if (this.state !== GAME_STATES.RALLY) {
+      // In SERVE_WAIT, POINT_SCORED, or MATCH_OVER, passive paddle collisions must NEVER affect gameplay
       return;
     }
 
-    // Rule: ITTF 2.10.1.6 - A player cannot hit the ball twice consecutively
-    if (!this.isServiceInProgress && this.lastHitter === player && this.rallyLength > 0) {
-      const opponent = player === 1 ? 2 : 1;
-      this.awardPoint(opponent, 'DOUBLE HIT');
-      return;
+    // 1. Serving Phase Validation
+    if (this.isServiceInProgress) {
+      if (player === this.server) {
+        // Consecutive hit by server during serve
+        const opponent = player === 1 ? 2 : 1;
+        this.awardPoint(opponent, 'DOUBLE HIT');
+        return;
+      }
+
+      // Receiver returning serve:
+      // "One Bounce on Your Side: When defending, the ball must bounce exactly once on your side of the table before you return it.
+      //  No Volleys: You cannot hit the ball in mid-air before it bounces on your side. Doing so immediately awards the point to your opponent."
+      const receiverBounces = this.server === 1 ? this.bouncesP2 : this.bouncesP1;
+      if (receiverBounces === 0) {
+        this.awardPoint(this.server, 'ILLEGAL VOLLEY');
+        return;
+      }
+
+      // Legal serve return completed
+      this.isServiceInProgress = false;
+      if (this.physics) this.physics.isServeFlight = false;
+    } else {
+      // 2. Normal Rally Phase Validation
+      // Rule: ITTF 2.10.1.6 - A player cannot hit the ball twice consecutively
+      if (this.lastHitter === player && this.rallyLength > 0) {
+        const opponent = player === 1 ? 2 : 1;
+        this.awardPoint(opponent, 'DOUBLE HIT');
+        return;
+      }
+
+      // Defender returning opponent's shot:
+      // "One Bounce on Your Side: When defending, the ball must bounce exactly once on your side of the table before you return it.
+      //  No Volleys: You cannot hit the ball in mid-air before it bounces on your side. Doing so immediately awards the point to your opponent."
+      if (this.lastHitter !== player) {
+        const defenderBounces = player === 1 ? this.bouncesP1 : this.bouncesP2;
+        if (defenderBounces === 0) {
+          const opponent = player === 1 ? 2 : 1;
+          this.awardPoint(opponent, 'ILLEGAL VOLLEY');
+          return;
+        }
+      }
     }
 
     this.lastHitter = player;
@@ -571,8 +668,9 @@ export class TableTennisGame {
         this.aiReactionTimer -= dt;
       }
 
-      // Step forward to meet the ball cleanly on the rise
-      const interceptZ = THREE.MathUtils.clamp(ballPos.z + 0.18, config.interceptRise, 1.42);
+      // Step forward to meet the ball cleanly on the rise (only step forward after ball bounces to prevent illegal volleys)
+      const minZ = this.bouncesP2 >= 1 ? 0.75 : 1.28;
+      const interceptZ = THREE.MathUtils.clamp(ballPos.z + 0.18, Math.max(minZ, config.interceptRise), 1.42);
       const distZ = Math.max(0.04, interceptZ - ballPos.z);
       const timeToIntercept = distZ / Math.max(1.0, ballVel.z);
 
