@@ -270,6 +270,54 @@ body, html {
   transform: translateY(-1px);
 }
 
+/* Bot Difficulty Switcher */
+.hud-btn.difficulty-btn {
+  font-weight: 700;
+  min-width: 96px;
+  justify-content: center;
+  transition: all 0.22s cubic-bezier(0.4, 0, 0.2, 1);
+  letter-spacing: 0.5px;
+}
+
+.hud-btn.difficulty-btn.easy {
+  background: rgba(0, 255, 136, 0.12);
+  border-color: #00ff88;
+  color: #00ff88;
+  box-shadow: 0 0 12px rgba(0, 255, 136, 0.25);
+}
+
+.hud-btn.difficulty-btn.easy:hover {
+  background: rgba(0, 255, 136, 0.24);
+  box-shadow: 0 0 18px rgba(0, 255, 136, 0.55);
+  transform: translateY(-1px);
+}
+
+.hud-btn.difficulty-btn.medium {
+  background: rgba(255, 187, 0, 0.14);
+  border-color: #ffbb00;
+  color: #ffbb00;
+  box-shadow: 0 0 12px rgba(255, 187, 0, 0.3);
+}
+
+.hud-btn.difficulty-btn.medium:hover {
+  background: rgba(255, 187, 0, 0.28);
+  box-shadow: 0 0 18px rgba(255, 187, 0, 0.6);
+  transform: translateY(-1px);
+}
+
+.hud-btn.difficulty-btn.hard {
+  background: linear-gradient(135deg, rgba(255, 0, 85, 0.25), rgba(255, 68, 0, 0.22));
+  border-color: #ff0055;
+  color: #ff3377;
+  box-shadow: 0 0 14px rgba(255, 0, 85, 0.4);
+}
+
+.hud-btn.difficulty-btn.hard:hover {
+  background: linear-gradient(135deg, rgba(255, 0, 85, 0.38), rgba(255, 68, 0, 0.35));
+  box-shadow: 0 0 22px rgba(255, 0, 85, 0.7);
+  transform: translateY(-1px);
+}
+
 .hud-btn.danger {
   background: rgba(180, 40, 40, 0.8);
   border-color: #ff4444;

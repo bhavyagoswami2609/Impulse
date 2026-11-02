@@ -167,6 +167,7 @@ async function main() {
     const buttons = await client.evaluate(`({
       tennis: Boolean(document.getElementById('btn-mode-tennis')),
       hockey: Boolean(document.getElementById('btn-mode-hockey')),
+      botDiff: Boolean(document.getElementById('btn-bot-difficulty')),
       webcam: Boolean(document.getElementById('btn-toggle-cam')),
       facetrack: Boolean(document.getElementById('btn-toggle-facetrack')),
       calibrate: Boolean(document.getElementById('btn-calibrate-hand')),
@@ -376,6 +377,65 @@ async function main() {
     await client.evaluate(`document.getElementById('btn-serve-ball').click()`);
     await wait(200);
     console.log('✓ Serve action triggered successfully');
+
+    // Test 9b: Bot Difficulty Cycling via Button & Hotkey
+    console.log('--- Testing Bot Difficulty Cycling ---');
+    const initialDiff = await client.evaluate(`({
+      difficulty: window.gameApp.botDifficulty,
+      btnText: document.getElementById('bot-diff-text')?.textContent,
+      p2Label: document.getElementById('p2-label')?.textContent,
+      hudBadge: document.getElementById('hud-p2-badge')?.textContent,
+    })`);
+    assert.strictEqual(initialDiff.difficulty, 'medium');
+    assert.strictEqual(initialDiff.btnText, 'BOT: MED');
+    assert.strictEqual(initialDiff.p2Label, 'CPU (MED)');
+    console.log('  Initial: Medium difficulty active');
+
+    // Click button -> Cycle to HARD
+    await client.evaluate(`document.getElementById('btn-bot-difficulty').click()`);
+    await wait(150);
+    const hardDiff = await client.evaluate(`({
+      difficulty: window.gameApp.botDifficulty,
+      btnText: document.getElementById('bot-diff-text')?.textContent,
+      p2Label: document.getElementById('p2-label')?.textContent,
+      hudBadge: document.getElementById('hud-p2-badge')?.textContent,
+      toast: document.getElementById('action-toast')?.textContent,
+    })`);
+    assert.strictEqual(hardDiff.difficulty, 'hard');
+    assert.strictEqual(hardDiff.btnText, 'BOT: HARD');
+    assert.strictEqual(hardDiff.p2Label, 'CPU (HARD)');
+    assert(hardDiff.toast.includes('HARD'), `Toast should announce HARD, got: ${hardDiff.toast}`);
+    console.log(`  Button click cycled to: HARD (Toast: "${hardDiff.toast}")`);
+
+    // Keydown 'KeyD' -> Cycle to EASY
+    await client.send('Input.dispatchKeyEvent', { type: 'rawKeyDown', code: 'KeyD', key: 'd' });
+    await client.send('Input.dispatchKeyEvent', { type: 'keyUp', code: 'KeyD', key: 'd' });
+    await wait(150);
+    const easyDiff = await client.evaluate(`({
+      difficulty: window.gameApp.botDifficulty,
+      btnText: document.getElementById('bot-diff-text')?.textContent,
+      p2Label: document.getElementById('p2-label')?.textContent,
+      toast: document.getElementById('action-toast')?.textContent,
+    })`);
+    assert.strictEqual(easyDiff.difficulty, 'easy');
+    assert.strictEqual(easyDiff.btnText, 'BOT: EASY');
+    assert.strictEqual(easyDiff.p2Label, 'CPU (EASY)');
+    assert(easyDiff.toast.includes('EASY'), `Toast should announce EASY, got: ${easyDiff.toast}`);
+    console.log(`  Hotkey 'D' cycled to: EASY (Toast: "${easyDiff.toast}")`);
+
+    // Keydown 'KeyD' -> Cycle back to MEDIUM
+    await client.send('Input.dispatchKeyEvent', { type: 'rawKeyDown', code: 'KeyD', key: 'd' });
+    await client.send('Input.dispatchKeyEvent', { type: 'keyUp', code: 'KeyD', key: 'd' });
+    await wait(150);
+    const cycledMed = await client.evaluate(`({
+      difficulty: window.gameApp.botDifficulty,
+      btnText: document.getElementById('bot-diff-text')?.textContent,
+      p2Label: document.getElementById('p2-label')?.textContent,
+    })`);
+    assert.strictEqual(cycledMed.difficulty, 'medium');
+    assert.strictEqual(cycledMed.btnText, 'BOT: MED');
+    assert.strictEqual(cycledMed.p2Label, 'CPU (MED)');
+    console.log('✓ Bot difficulty cycles cleanly via click and hotkey across EASY, MEDIUM, and HARD');
 
     // Test 10: Inspect Console Errors
     console.log('--- Checking Console Errors ---');

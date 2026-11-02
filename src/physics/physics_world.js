@@ -226,7 +226,7 @@ export class PhysicsWorld {
    * Continuous swept strike detector:
    * Tuned for readable, trackable ball pace with high-reaction rally speeds
    */
-  checkContinuousStrikes(p1Pos, p1Vel, p1Yaw, p2Pos, p2Vel, p2Yaw, p2AimX) {
+  checkContinuousStrikes(p1Pos, p1Vel, p1Yaw, p2Pos, p2Vel, p2Yaw, p2AimX, p2PowerMultiplier = 1.0) {
     if (!this.isInRally) return;
 
     const bPos = this.ballBody.position;
@@ -352,8 +352,9 @@ export class PhysicsWorld {
         this.lastPaddleHitTime = now;
 
         const swingForward = Math.max(0, -p2Vel.z);
-        // Powerful, assertive return pace (2.9 to 3.8 m/s) - no weak dribbles into the net!
-        const returnVz = -THREE.MathUtils.clamp(2.9 + swingForward * 0.50, 2.9, 3.8);
+        // Scaled return pace based on difficulty returnPower multiplier
+        const baseReturnPace = (2.9 + swingForward * 0.50) * (p2PowerMultiplier || 1.0);
+        const returnVz = -THREE.MathUtils.clamp(baseReturnPace, 2.3, 4.4);
 
         // Target landing cleanly deep on P1's table half (zLand = -0.75m)
         const targetZLand = -0.75;
@@ -386,9 +387,9 @@ export class PhysicsWorld {
     // Disabled: table tennis ball travels in pure, straight lines without mid-air curving
   }
 
-  step(deltaTime, p1Pos, p1Vel, p1Yaw, p2Pos, p2Vel, p2Yaw, p2AimX) {
+  step(deltaTime, p1Pos, p1Vel, p1Yaw, p2Pos, p2Vel, p2Yaw, p2AimX, p2PowerMultiplier = 1.0) {
     if (this.isInRally) {
-      this.checkContinuousStrikes(p1Pos, p1Vel, p1Yaw, p2Pos, p2Vel, p2Yaw, p2AimX);
+      this.checkContinuousStrikes(p1Pos, p1Vel, p1Yaw, p2Pos, p2Vel, p2Yaw, p2AimX, p2PowerMultiplier);
 
       // Height safety: clamp maximum ball height so it never balloons into the ceiling
       if (this.ballBody.position.y > 1.08 && this.ballBody.velocity.y > 0) {

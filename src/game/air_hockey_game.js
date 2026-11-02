@@ -68,9 +68,9 @@ export class AirHockeyGame {
     this.aiShotTimer = 0;
     this.difficulty = 'medium';
     this.difficultyConfigs = {
-      easy: { aiSpeed: 4.5, errorMargin: 0.08, maxReachZ: 0.45 },
-      medium: { aiSpeed: 7.5, errorMargin: 0.03, maxReachZ: 0.20 },
-      hard: { aiSpeed: 11.0, errorMargin: 0.0, maxReachZ: 0.05 },
+      easy: { aiSpeed: 4.5, errorMargin: 0.08, maxReachZ: 0.45, strikePower: 0.8 },
+      medium: { aiSpeed: 7.5, errorMargin: 0.03, maxReachZ: 0.20, strikePower: 1.0 },
+      hard: { aiSpeed: 12.0, errorMargin: 0.0, maxReachZ: 0.04, strikePower: 1.3 },
     };
 
     // Shot Clock (7 seconds rule)
@@ -233,7 +233,8 @@ export class AirHockeyGame {
       this.aiServeTimer -= dt;
       if (this.aiServeTimer <= 0) {
         // Drive forward through puck to physically strike it
-        this.aiTargetPos.set(0, AIR_HOCKEY_TABLE_HEIGHT, 0.62);
+        const strikeOffset = 0.62 - 0.05 * ((config.strikePower || 1.0) - 1.0);
+        this.aiTargetPos.set(0, AIR_HOCKEY_TABLE_HEIGHT, strikeOffset);
       } else {
         // Line up behind puck ready to strike
         this.aiTargetPos.set(0, AIR_HOCKEY_TABLE_HEIGHT, 0.92);
@@ -257,7 +258,8 @@ export class AirHockeyGame {
         const distToPuck = Math.hypot(this.p2Pos.x - puckX, this.p2Pos.z - puckZ);
         if (distToPuck < 0.22) {
           this.aiTargetPos.x = desiredX;
-          this.aiTargetPos.z = Math.max(this.p2Bounds.minZ, puckZ - 0.08); // Strike through!
+          const strikeReach = 0.08 * (config.strikePower || 1.0);
+          this.aiTargetPos.z = Math.max(this.p2Bounds.minZ, puckZ - strikeReach); // Strike through!
         } else {
           this.aiTargetPos.x = desiredX;
           this.aiTargetPos.z = desiredZ;

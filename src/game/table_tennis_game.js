@@ -39,7 +39,7 @@ export class TableTennisGame {
     this.netHitDuringServe = false;
     this.deadBallTimer = 0;
 
-    // CPU AI Opponent
+    // CPU AI Opponent & Bot Difficulty
     this.aiEnabled = true;
     this.aiCurrentPos = new THREE.Vector3(0, 0.95, 1.45);
     this.aiTargetPos = new THREE.Vector3(0, 0.95, 1.45);
@@ -47,6 +47,40 @@ export class TableTennisGame {
     this.aiSwingTimer = 0;
     this.aiCurrentYaw = 0;
     this.aiShotTargetX = -0.38;
+    this.aiReactionTimer = 0;
+    this.difficulty = 'medium';
+    this.difficultyConfigs = {
+      easy: {
+        aiSpeed: 7.0,
+        errorMargin: 0.08,
+        reactionDelay: 0.12,
+        swingPower: 0.85,
+        cornerDriveRate: 0.35,
+        interceptRise: 1.34,
+        servePace: 2.30,
+        returnPower: 0.86,
+      },
+      medium: {
+        aiSpeed: 12.0,
+        errorMargin: 0.02,
+        reactionDelay: 0.03,
+        swingPower: 1.0,
+        cornerDriveRate: 0.70,
+        interceptRise: 1.28,
+        servePace: 2.75,
+        returnPower: 1.0,
+      },
+      hard: {
+        aiSpeed: 16.5,
+        errorMargin: 0.0,
+        reactionDelay: 0.0,
+        swingPower: 1.20,
+        cornerDriveRate: 0.95,
+        interceptRise: 1.22,
+        servePace: 3.15,
+        returnPower: 1.15,
+      },
+    };
 
     // Last recorded player paddle transform
     this.lastP1Pos = new THREE.Vector3(0, 0.95, -1.45);
@@ -311,6 +345,12 @@ export class TableTennisGame {
     this.resetRally(this.server);
   }
 
+  setDifficulty(level) {
+    if (this.difficultyConfigs && this.difficultyConfigs[level]) {
+      this.difficulty = level;
+    }
+  }
+
   /**
    * Dynamic Serve Execution:
    * Maps Player 1's actual paddle position & swing velocity to launch angles, pace, and spin curve!
@@ -344,12 +384,14 @@ export class TableTennisGame {
       this.onActionToast(`P1 SERVE: ${dirDesc}`);
     } else {
       // CPU Tactical Serves:
-      // Direct straight-line trajectories along tactical angles
+      // Direct straight-line trajectories along tactical angles scaled to difficulty
+      const config = this.difficultyConfigs[this.difficulty] || this.difficultyConfigs.medium;
+      const paceFactor = config.servePace / 2.75;
       const cpuServes = [
-        { name: 'CROSS FOREHAND', startX: -0.22, targetVx: 0.35, paceVz: 2.75, vy: -0.66 },
-        { name: 'CROSS BACKHAND', startX: 0.22, targetVx: -0.35, paceVz: 2.75, vy: -0.66 },
-        { name: 'POWER DRIVE', startX: 0.0, targetVx: 0.0, paceVz: 2.80, vy: -0.68 },
-        { name: 'FAST ANGLE', startX: 0.16, targetVx: -0.25, paceVz: 2.70, vy: -0.65 },
+        { name: 'CROSS FOREHAND', startX: -0.22, targetVx: 0.35, paceVz: 2.75 * paceFactor, vy: -0.66 },
+        { name: 'CROSS BACKHAND', startX: 0.22, targetVx: -0.35, paceVz: 2.75 * paceFactor, vy: -0.66 },
+        { name: 'POWER DRIVE', startX: 0.0, targetVx: 0.0, paceVz: 2.80 * paceFactor, vy: -0.68 },
+        { name: 'FAST ANGLE', startX: 0.16, targetVx: -0.25, paceVz: 2.70 * paceFactor, vy: -0.65 },
       ];
       const choice = cpuServes[Math.floor(Math.random() * cpuServes.length)];
       this.physics.serveBall(2, choice);
@@ -416,24 +458,37 @@ export class TableTennisGame {
     }
 
     // 2. Rally Tracking & Strategic Interception
+    const config = this.difficultyConfigs[this.difficulty] || this.difficultyConfigs.medium;
+
     if (ballVel.z > 0 && ballPos.z > -0.35) {
-      // Step forward to meet the ball cleanly on the rise (1.22m to 1.42m)
-      const interceptZ = THREE.MathUtils.clamp(ballPos.z + 0.18, 1.22, 1.42);
+      if (this.aiReactionTimer > 0) {
+        this.aiReactionTimer -= dt;
+      }
+
+      // Step forward to meet the ball cleanly on the rise
+      const interceptZ = THREE.MathUtils.clamp(ballPos.z + 0.18, config.interceptRise, 1.42);
       const distZ = Math.max(0.04, interceptZ - ballPos.z);
       const timeToIntercept = distZ / Math.max(1.0, ballVel.z);
 
-      // Strategic corner/placement aiming: aim away from player position!
+      // Strategic corner/placement aiming: aim away from player position with cornerDriveRate probability!
       const p1X = this.scene.paddle1 ? this.scene.paddle1.position.x : 0;
-      if (p1X < -0.10) {
-        this.aiShotTargetX = 0.42; // Player on right, drive cross-court left
-      } else if (p1X > 0.10) {
-        this.aiShotTargetX = -0.42; // Player on left, drive cross-court right
+      const willCornerDrive = Math.random() < config.cornerDriveRate;
+      if (willCornerDrive) {
+        if (p1X < -0.10) {
+          this.aiShotTargetX = 0.42; // Player on right, drive cross-court left
+        } else if (p1X > 0.10) {
+          this.aiShotTargetX = -0.42; // Player on left, drive cross-court right
+        } else {
+          this.aiShotTargetX = this.aiShotTargetX > 0 ? -0.38 : 0.38;
+        }
       } else {
-        this.aiShotTargetX = this.aiShotTargetX > 0 ? -0.38 : 0.38;
+        // Return towards center or slight angle
+        this.aiShotTargetX = (Math.random() - 0.5) * 0.25;
       }
 
+      const errorOffset = Math.sin(Date.now() * 0.005) * config.errorMargin;
       const targetX = THREE.MathUtils.clamp(
-        ballPos.x + ballVel.x * timeToIntercept * 0.95,
+        ballPos.x + ballVel.x * timeToIntercept * 0.95 + errorOffset,
         -TABLE_WIDTH * 0.45,
         TABLE_WIDTH * 0.45
       );
@@ -449,7 +504,7 @@ export class TableTennisGame {
 
       // Track target yaw angle towards open court target
       const desiredYaw = THREE.MathUtils.clamp((this.aiShotTargetX - targetX) * 0.55, -0.42, 0.42);
-      this.aiCurrentYaw += (desiredYaw - this.aiCurrentYaw) * Math.min(1.0, dt * 8.0);
+      this.aiCurrentYaw += (desiredYaw - this.aiCurrentYaw) * Math.min(1.0, dt * (8.0 * config.swingPower));
 
       // When ball is in strike zone, execute an assertive forward swing through the ball!
       if (distZ < 0.35 && this.aiSwingTimer <= 0) {
@@ -458,21 +513,22 @@ export class TableTennisGame {
     } else {
       this.aiTargetPos.set(0, 0.95, 1.44);
       this.aiCurrentYaw *= Math.max(0, 1 - dt * 4.0);
+      this.aiReactionTimer = config.reactionDelay;
     }
 
     if (this.aiSwingTimer > 0) {
       this.aiSwingTimer -= dt;
       // Drive forward through the ball with power
-      this.aiTargetPos.z = Math.max(1.10, this.aiTargetPos.z - 0.25);
+      this.aiTargetPos.z = Math.max(1.10, this.aiTargetPos.z - (0.25 * config.swingPower));
     }
 
-    const aiSpeed = 12.0; // Responsive athletic movement matching air hockey AI
+    const aiSpeed = config.aiSpeed; // Responsive athletic movement scaling with difficulty
     this.aiCurrentPos.x += (this.aiTargetPos.x - this.aiCurrentPos.x) * Math.min(1.0, dt * aiSpeed);
     this.aiCurrentPos.y += (this.aiTargetPos.y - this.aiCurrentPos.y) * Math.min(1.0, dt * aiSpeed);
     this.aiCurrentPos.z += (this.aiTargetPos.z - this.aiCurrentPos.z) * Math.min(1.0, dt * (aiSpeed * 1.5));
 
     const aiRot = new THREE.Quaternion().setFromEuler(new THREE.Euler(0, Math.PI + this.aiCurrentYaw, 0));
-    const aiVel = new THREE.Vector3(0, 0, (this.aiTargetPos.z - this.aiCurrentPos.z) * 10);
+    const aiVel = new THREE.Vector3(0, 0, (this.aiTargetPos.z - this.aiCurrentPos.z) * 10 * config.swingPower);
     this.physics.updatePaddle2(this.aiCurrentPos, aiRot, aiVel);
   }
 
@@ -542,7 +598,8 @@ export class TableTennisGame {
         const p2Vel = new THREE.Vector3(0, 0, (this.aiTargetPos.z - this.aiCurrentPos.z) * 10);
         const p2Yaw = this.aiCurrentYaw || 0;
 
-        this.physics.step(dt, p1Pos, p1Vel, p1Yaw, p2Pos, p2Vel, p2Yaw, this.aiShotTargetX);
+        const config = this.difficultyConfigs[this.difficulty] || this.difficultyConfigs.medium;
+        this.physics.step(dt, p1Pos, p1Vel, p1Yaw, p2Pos, p2Vel, p2Yaw, this.aiShotTargetX, config.returnPower);
 
         if (this.isBallOffTable(this.physics.ballBody.position, dt)) {
           this.handleBallLeftTable();

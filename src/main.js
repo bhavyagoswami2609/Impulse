@@ -87,6 +87,7 @@ class TableTennisApp {
 
     this.lastTime = performance.now();
     this.currentCameraView = 'host';
+    this.botDifficulty = 'medium';
     this.hasStarted = true;
 
     // 7. Bind DOM UI Elements & Hotkeys
@@ -175,6 +176,9 @@ class TableTennisApp {
     const chkInvertX = document.getElementById('chk-invert-x');
     const isInvert = Boolean(this.tracker && this.tracker.invertX);
     if (chkInvertX) chkInvertX.checked = isInvert;
+
+    // 6. Bot Difficulty Status
+    this.updateDifficultyUI();
   }
 
   async startDefaultWebcam() {
@@ -261,6 +265,62 @@ class TableTennisApp {
     this.syncHUD();
     this.showActionToast(enabled ? 'AUDIO: ON' : 'AUDIO: OFF');
     return enabled;
+  }
+
+  setBotDifficulty(level) {
+    if (!['easy', 'medium', 'hard'].includes(level)) return;
+    this.botDifficulty = level;
+
+    if (this.game && typeof this.game.setDifficulty === 'function') {
+      this.game.setDifficulty(level);
+    }
+    if (this.hockeyGame && typeof this.hockeyGame.setDifficulty === 'function') {
+      this.hockeyGame.setDifficulty(level);
+    }
+
+    this.updateDifficultyUI();
+  }
+
+  cycleBotDifficulty() {
+    const cycle = { easy: 'medium', medium: 'hard', hard: 'easy' };
+    const nextLevel = cycle[this.botDifficulty] || 'medium';
+    this.setBotDifficulty(nextLevel);
+
+    const toastMap = {
+      easy: 'BOT DIFFICULTY: EASY 🟢',
+      medium: 'BOT DIFFICULTY: MEDIUM ⚡',
+      hard: 'BOT DIFFICULTY: HARD 🔥',
+    };
+    this.showActionToast(toastMap[nextLevel] || `BOT: ${nextLevel.toUpperCase()}`);
+    sound.playTableBounce(0.8);
+  }
+
+  updateDifficultyUI() {
+    const btn = document.getElementById('btn-bot-difficulty');
+    const txt = document.getElementById('bot-diff-text');
+    const p2Label = document.getElementById('p2-label');
+    const hudP2Badge = document.getElementById('hud-p2-badge');
+
+    const config = {
+      easy: { btn: 'BOT: EASY', p2: 'CPU (EASY)', badge: 'CPU (EASY)' },
+      medium: { btn: 'BOT: MED', p2: 'CPU (MED)', badge: 'CPU (MED)' },
+      hard: { btn: 'BOT: HARD', p2: 'CPU (HARD)', badge: 'CPU (HARD)' },
+    };
+    const current = config[this.botDifficulty] || config.medium;
+
+    if (btn) {
+      btn.classList.remove('easy', 'medium', 'hard');
+      btn.classList.add(this.botDifficulty);
+    }
+    if (txt) {
+      txt.textContent = current.btn;
+    }
+
+    // Only update CPU labels if not connected to another human player
+    if (!this.multiplayer.isConnected) {
+      if (p2Label) p2Label.textContent = current.p2;
+      if (hudP2Badge) hudP2Badge.textContent = current.badge;
+    }
   }
 
   triggerFullCalibration(isGesture = false) {
@@ -378,6 +438,15 @@ class TableTennisApp {
         this.game.serve();
       }
     };
+
+    // Bot Difficulty Button
+    const btnBotDiff = document.getElementById('btn-bot-difficulty');
+    if (btnBotDiff) {
+      btnBotDiff.addEventListener('click', () => {
+        sound.ensureContext();
+        this.cycleBotDifficulty();
+      });
+    }
 
     // Serve Ball Button
     const btnServeBall = document.getElementById('btn-serve-ball');
@@ -610,6 +679,9 @@ class TableTennisApp {
         this.toggleWebcam();
       } else if (e.code === 'KeyF') {
         this.toggleFaceTracking();
+      } else if (e.code === 'KeyD') {
+        sound.ensureContext();
+        this.cycleBotDifficulty();
       }
     });
 
@@ -720,8 +792,7 @@ class TableTennisApp {
   onPeerDisconnected() {
     this.showActionToast('PEER DISCONNECTED');
     if (this.multiplayer.role === 'host') {
-      document.getElementById('p2-label').textContent = 'CPU (AI)';
-      document.getElementById('hud-p2-badge').textContent = 'CPU';
+      this.updateDifficultyUI();
     }
   }
 
@@ -927,12 +998,17 @@ class TableTennisApp {
     const h = canvas.height;
 
     // 1. Draw fresh live webcam video feed directly from video element at 60 FPS
+    // Always clear the canvas before drawing anything to avoid any ghosting or smearing
+    ctx.clearRect(0, 0, w, h);
+
     if (this.tracker.isTracking && video && video.readyState >= 2) {
       try {
-        ctx.clearRect(0, 0, w, h);
         ctx.drawImage(video, 0, 0, w, h);
-      } catch (e) {}
-    } else if (!this.tracker.isTracking) {
+      } catch (e) {
+        ctx.fillStyle = '#050b11';
+        ctx.fillRect(0, 0, w, h);
+      }
+    } else {
       ctx.fillStyle = '#050b11';
       ctx.fillRect(0, 0, w, h);
     }
