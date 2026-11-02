@@ -22,7 +22,8 @@ export class TableTennisGame {
     // Match State
     this.state = GAME_STATES.SERVE_WAIT;
     this.scores = [0, 0]; // [P1, P2/CPU]
-    this.server = 1;      // Rule: Point scorer serves next. Default P1.
+    this.initialServer = 1;
+    this.server = this.initialServer; // ITTF 2-serve rotation / 1-serve at deuce
     this.winningScore = 11;
     this.isDeuce = false;
 
@@ -109,6 +110,22 @@ export class TableTennisGame {
     };
   }
 
+  /**
+   * Computes legal server under ITTF rules (Sections 2.13.3, 2.13.4):
+   * - Before deuce (< 10-10): each player serves for 2 consecutive points.
+   * - At deuce and beyond (>= 10-10): each player serves for only 1 point in turn.
+   */
+  computeNextServer(scores) {
+    const p1 = scores[0];
+    const p2 = scores[1];
+    const totalPoints = p1 + p2;
+    if (p1 >= 10 && p2 >= 10) {
+      return (totalPoints % 2 === 0) ? this.initialServer : (3 - this.initialServer);
+    }
+    const serviceBlock = Math.floor(totalPoints / 2);
+    return (serviceBlock % 2 === 0) ? this.initialServer : (3 - this.initialServer);
+  }
+
   handleTableBounce(pos, side) {
     if (this.state !== GAME_STATES.RALLY) return;
 
@@ -123,28 +140,75 @@ export class TableTennisGame {
       this.bouncesP2++;
     }
 
-    // Scoring rule: A point is awarded if there are more than two bounces on the same side
-    if (this.bouncesP1 > 2) {
-      this.awardPoint(2, this.isServiceInProgress ? 'FAULT' : '3 BOUNCES');
-      return;
-    } else if (this.bouncesP2 > 2) {
-      this.awardPoint(1, this.isServiceInProgress ? 'FAULT' : '3 BOUNCES');
+    // A. Service Phase Validation
+    if (this.isServiceInProgress) {
+      if (this.server === 1) {
+        // Player 1 Serving:
+        if (this.bouncesP1 >= 2) {
+          // Bounced twice on server's own table
+          this.awardPoint(2, 'FAULT - DOUBLE BOUNCE');
+          return;
+        }
+        if (side === 2) {
+          if (this.bouncesP1 === 0) {
+            // Did not bounce on server's table first
+            this.awardPoint(2, 'FAULT - DIRECT HIT');
+            return;
+          }
+          if (this.bouncesP2 >= 2) {
+            // Receiver allowed it to bounce twice
+            this.awardPoint(1, 'ACE');
+            return;
+          }
+          if (this.bouncesP1 >= 1 && this.bouncesP2 === 1 && !this.netHitDuringServe) {
+            // Legal serve completed
+            this.isServiceInProgress = false;
+            if (this.physics) this.physics.isServeFlight = false;
+          }
+        }
+      } else {
+        // Player 2 / CPU Serving:
+        if (this.bouncesP2 >= 2) {
+          // Bounced twice on server's own table
+          this.awardPoint(1, 'FAULT - DOUBLE BOUNCE');
+          return;
+        }
+        if (side === 1) {
+          if (this.bouncesP2 === 0) {
+            // Did not bounce on server's table first
+            this.awardPoint(1, 'FAULT - DIRECT HIT');
+            return;
+          }
+          if (this.bouncesP1 >= 2) {
+            // Receiver allowed it to bounce twice
+            this.awardPoint(2, 'ACE');
+            return;
+          }
+          if (this.bouncesP2 >= 1 && this.bouncesP1 === 1 && !this.netHitDuringServe) {
+            // Legal serve completed
+            this.isServiceInProgress = false;
+            if (this.physics) this.physics.isServeFlight = false;
+          }
+        }
+      }
       return;
     }
 
-    // Progress serve state: when ball bounces on server side and receiver side without net clip, serve is complete
-    if (this.isServiceInProgress) {
-      if (this.server === 1) {
-        if (this.bouncesP1 >= 1 && this.bouncesP2 >= 1 && !this.netHitDuringServe) {
-          this.isServiceInProgress = false;
-          if (this.physics) this.physics.isServeFlight = false;
-        }
-      } else {
-        if (this.bouncesP2 >= 1 && this.bouncesP1 >= 1 && !this.netHitDuringServe) {
-          this.isServiceInProgress = false;
-          if (this.physics) this.physics.isServeFlight = false;
-        }
-      }
+    // B. Normal Rally Phase Validation
+    // Rule: ITTF 2.10.1.3 - Ball cannot bounce on the hitter's own table side after being struck
+    if (side === this.lastHitter) {
+      const opponent = this.lastHitter === 1 ? 2 : 1;
+      this.awardPoint(opponent, 'FAULT - OWN TABLE');
+      return;
+    }
+
+    // Rule: ITTF 2.10.1.1 - Double bounce on receiver side is an immediate point to the hitter
+    if (side === 1 && this.bouncesP1 >= 2) {
+      this.awardPoint(2, 'DOUBLE BOUNCE');
+      return;
+    } else if (side === 2 && this.bouncesP2 >= 2) {
+      this.awardPoint(1, 'DOUBLE BOUNCE');
+      return;
     }
   }
 
@@ -156,6 +220,18 @@ export class TableTennisGame {
     this.scene.triggerImpact(padMesh.position, isSmash ? 0xff0044 : 0x00ffff);
 
     if (this.multiplayer.role === 'client') return;
+
+    if (this.state === GAME_STATES.SERVE_WAIT) {
+      // In SERVE_WAIT, passive paddle collisions must NEVER start the rally or launch the ball
+      return;
+    }
+
+    // Rule: ITTF 2.10.1.6 - A player cannot hit the ball twice consecutively
+    if (!this.isServiceInProgress && this.lastHitter === player && this.rallyLength > 0) {
+      const opponent = player === 1 ? 2 : 1;
+      this.awardPoint(opponent, 'DOUBLE HIT');
+      return;
+    }
 
     this.lastHitter = player;
     this.bouncesP1 = 0;
@@ -177,11 +253,6 @@ export class TableTennisGame {
       this.smashEnergy[player - 1] = 0;
       this.physics.smashBall(player);
       this.onActionToast('MEGA SMASH');
-    }
-
-    if (this.state === GAME_STATES.SERVE_WAIT) {
-      // In SERVE_WAIT, passive paddle collisions must NEVER start the rally or launch the ball
-      return;
     }
   }
 
@@ -319,34 +390,47 @@ export class TableTennisGame {
   }
 
   /**
-   * Rule: The person who gets a point is the one who serves!
-   * Immediately resets ball ready to serve with zero gap.
+   * Awards point adhering strictly to official ITTF rules (Sections 2.11, 2.12, 2.13):
+   * - Computes ITTF service rotation (2 serves each, 1 serve each during and after deuce).
+   * - Correctly announces Deuce (10-10, 11-11, etc.) and Advantage (11-10, etc.).
+   * - Signals Match Over when a player reaches >= 11 with a lead of >= 2.
    */
   awardPoint(winner, reason = 'POINT') {
     if (this.state === GAME_STATES.MATCH_OVER) return;
 
     this.scores[winner - 1]++;
-    this.server = winner;
-
-    sound.playScore(winner === 1);
-    this.onActionToast(`${winner === 1 ? 'P1' : 'CPU'} ${reason}`);
-    this.onScoreUpdate(this.scores);
-
     const p1 = this.scores[0];
     const p2 = this.scores[1];
 
+    sound.playScore(winner === 1);
+    this.server = this.computeNextServer(this.scores);
+    this.onScoreUpdate(this.scores);
+
+    // ITTF 2.11: Game won by player first scoring 11 points with at least a 2-point lead
     if ((p1 >= this.winningScore || p2 >= this.winningScore) && Math.abs(p1 - p2) >= 2) {
       this.state = GAME_STATES.MATCH_OVER;
+      this.isDeuce = false;
       const champion = p1 > p2 ? 'PLAYER 1' : 'CPU';
-      this.onActionToast(`MATCH OVER: ${champion} WINS`);
+      this.onActionToast(`MATCH OVER: ${champion} WINS (${p1}-${p2})`);
       this.onStateChange(this.state);
       this.onMatchOver({ winner: champion, scores: this.scores });
       return;
     }
 
+    // ITTF 2.11 & 2.13.4: Deuce and Advantage announcements
     if (p1 >= 10 && p2 >= 10) {
       this.isDeuce = true;
-      this.onActionToast('DEUCE');
+      if (p1 === p2) {
+        this.onActionToast(`DEUCE (${p1}-${p2})`);
+      } else if (p1 > p2) {
+        this.onActionToast(`ADVANTAGE P1 (${p1}-${p2})`);
+      } else {
+        this.onActionToast(`ADVANTAGE CPU (${p1}-${p2})`);
+      }
+    } else {
+      this.isDeuce = false;
+      const winnerName = winner === 1 ? 'P1' : 'CPU';
+      this.onActionToast(`${winnerName} ${reason} (${p1}-${p2})`);
     }
 
     this.resetRally(this.server);
@@ -432,11 +516,12 @@ export class TableTennisGame {
 
   restartMatch() {
     this.scores = [0, 0];
-    this.server = 1;
+    this.initialServer = 1;
+    this.server = this.initialServer;
     this.isDeuce = false;
     this.smashEnergy = [0, 0];
     this.isHyperSmashActive = [false, false];
-    this.resetRally(1);
+    this.resetRally(this.server);
     this.onScoreUpdate(this.scores);
     this.onActionToast('NEW MATCH STARTED');
   }
