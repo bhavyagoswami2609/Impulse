@@ -542,6 +542,7 @@ export class AirHockeyPhysics {
 
   /**
    * Depenetrate puck from striker if overlapping after position integration.
+   * If puck is pressed against the side wall rail, executes wedge ejection to prevent trapping.
    */
   _depenetrateStriker(strikerId, sPos) {
     const contactDist = STRIKER_RADIUS + PUCK_RADIUS;
@@ -555,14 +556,35 @@ export class AirHockeyPhysics {
       const nz = dist > 1e-6 ? dz / dist : (strikerId === 1 ? 1 : -1);
       const overlap = contactDist - dist + 1e-4;
 
-      this.puckPos.x += nx * overlap;
-      this.puckPos.z += nz * overlap;
+      const maxX = HALF_WIDTH - PUCK_RADIUS;
+      const minX = -HALF_WIDTH + PUCK_RADIUS;
+      const straightSideMaxZ = HALF_LENGTH - CORNER_BOUNCER_SIZE;
+      const isNearSideRail =
+        (this.puckPos.x >= maxX - 0.008 || this.puckPos.x <= minX + 0.008) &&
+        Math.abs(this.puckPos.z) <= straightSideMaxZ;
 
-      // Eliminate any lingering inward velocity
-      const vn = this.puckVel.x * nx + this.puckVel.z * nz;
-      if (vn < 0) {
-        this.puckVel.x -= vn * nx;
-        this.puckVel.z -= vn * nz;
+      if (isNearSideRail) {
+        // PINCH / WEDGE RESOLUTION:
+        // Puck cannot move outward through the solid wall rail.
+        // It pops out along the free longitudinal degree of freedom (Z) and bounces inward (-sign(x)).
+        const railSign = Math.sign(this.puckPos.x) || 1;
+        const wedgeSignZ = Math.abs(dz) > 0.004 ? Math.sign(dz) : (this.puckPos.z > 0 ? -1 : 1);
+
+        this.puckPos.z += wedgeSignZ * Math.max(overlap * 1.5, 0.008);
+        this.puckPos.x = railSign * (maxX - 0.003);
+
+        this.puckVel.z = wedgeSignZ * Math.max(Math.abs(this.puckVel.z), 1.25);
+        this.puckVel.x = -railSign * Math.max(Math.abs(this.puckVel.x), 0.65);
+      } else {
+        this.puckPos.x += nx * overlap;
+        this.puckPos.z += nz * overlap;
+
+        // Eliminate any lingering inward velocity
+        const vn = this.puckVel.x * nx + this.puckVel.z * nz;
+        if (vn < 0) {
+          this.puckVel.x -= vn * nx;
+          this.puckVel.z -= vn * nz;
+        }
       }
     }
   }
@@ -683,34 +705,54 @@ export class AirHockeyPhysics {
     const straightEndMaxX = HALF_WIDTH - CORNER_BOUNCER_SIZE;   // 0.55 - 0.15 = 0.40m
 
     // 1. Right Side Wall (X = +0.55m)
-    if (this.puckPos.x > maxX && Math.abs(this.puckPos.z) <= straightSideMaxZ) {
-      this.puckPos.x = maxX;
+    if (this.puckPos.x >= maxX && Math.abs(this.puckPos.z) <= straightSideMaxZ) {
+      this.puckPos.x = maxX - 0.001;
+
+      // Subtle curved deflection: kicks in outside center zone (|Z| > 0.20m) to deflect puck away from dead corners
+      const curveZ =
+        Math.abs(this.puckPos.z) > 0.20
+          ? -Math.sign(this.puckPos.z) * 0.04 * ((Math.abs(this.puckPos.z) - 0.20) / (straightSideMaxZ - 0.20))
+          : 0;
 
       if (this.puckVel.x > 0) {
         this.puckVel.x = -this.wallRestitution * this.puckVel.x;
-        this.puckVel.z = this.wallFriction * this.puckVel.z;
+        this.puckVel.z = this.wallFriction * this.puckVel.z + curveZ * Math.abs(this.puckVel.x);
         this.puckSpin *= 0.80;
 
         const impactSpeed = Math.hypot(this.puckVel.x, this.puckVel.z);
         if (this.onPuckHitWall) {
-          this.onPuckHitWall({ x: HALF_WIDTH, z: this.puckPos.z }, { x: -1, z: 0 }, impactSpeed);
+          this.onPuckHitWall({ x: HALF_WIDTH, z: this.puckPos.z }, { x: -1, z: curveZ === 0 ? 0 : curveZ }, impactSpeed);
         }
+      } else if (Math.abs(this.puckVel.x) < 0.35) {
+        // Anti-stick minimum cushion restitution to prevent pinning
+        this.puckVel.x = -0.35;
+        this.puckVel.z += curveZ * 0.35;
       }
     }
 
     // 2. Left Side Wall (X = -0.55m)
-    if (this.puckPos.x < minX && Math.abs(this.puckPos.z) <= straightSideMaxZ) {
-      this.puckPos.x = minX;
+    if (this.puckPos.x <= minX && Math.abs(this.puckPos.z) <= straightSideMaxZ) {
+      this.puckPos.x = minX + 0.001;
+
+      // Subtle curved deflection: kicks in outside center zone (|Z| > 0.20m) to deflect puck away from dead corners
+      const curveZ =
+        Math.abs(this.puckPos.z) > 0.20
+          ? -Math.sign(this.puckPos.z) * 0.04 * ((Math.abs(this.puckPos.z) - 0.20) / (straightSideMaxZ - 0.20))
+          : 0;
 
       if (this.puckVel.x < 0) {
         this.puckVel.x = -this.wallRestitution * this.puckVel.x;
-        this.puckVel.z = this.wallFriction * this.puckVel.z;
+        this.puckVel.z = this.wallFriction * this.puckVel.z + curveZ * Math.abs(this.puckVel.x);
         this.puckSpin *= 0.80;
 
         const impactSpeed = Math.hypot(this.puckVel.x, this.puckVel.z);
         if (this.onPuckHitWall) {
-          this.onPuckHitWall({ x: -HALF_WIDTH, z: this.puckPos.z }, { x: 1, z: 0 }, impactSpeed);
+          this.onPuckHitWall({ x: -HALF_WIDTH, z: this.puckPos.z }, { x: 1, z: curveZ === 0 ? 0 : curveZ }, impactSpeed);
         }
+      } else if (Math.abs(this.puckVel.x) < 0.35) {
+        // Anti-stick minimum cushion restitution to prevent pinning
+        this.puckVel.x = 0.35;
+        this.puckVel.z += curveZ * 0.35;
       }
     }
 

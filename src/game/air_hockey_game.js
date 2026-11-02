@@ -66,6 +66,7 @@ export class AirHockeyGame {
     this.aiServeTimer = 0.8;
     this.aiReactionDelay = 0;
     this.aiShotTimer = 0;
+    this.aiSwingTimer = 0;
     this.difficulty = 'medium';
     this.difficultyConfigs = {
       easy: { aiSpeed: 4.5, errorMargin: 0.08, maxReachZ: 0.45, strikePower: 0.8 },
@@ -160,6 +161,7 @@ export class AirHockeyGame {
     this.state = AIR_HOCKEY_STATES.SERVE_WAIT;
     this.shotClock = 7.0;
     this.aiServeTimer = 0.85;
+    this.aiSwingTimer = 0;
 
     // Reset puck inside the serving player's half stationary (closer to goal post)
     this.physics.resetPuck(server);
@@ -219,14 +221,21 @@ export class AirHockeyGame {
 
   /**
    * Smart CPU AI Opponent:
-   * Analyzes puck position, velocity, and trajectory.
-   * Defends goal crease when puck is in P1 half, attacks and banks when puck enters CPU half!
+   * - Intelligent rail tactics: avoids ramming into the wall by striking inside-out.
+   * - Anti-own-goal recovery: when puck is behind the mallet, flanks along center lane to avoid dragging.
+   * - Committed forward strikes: drives cleanly through puck into opponent territory.
+   * - Defensive goal crease stance when puck is in P1 territory.
    */
   updateAI(dt) {
     if (!this.aiEnabled || this.multiplayer.isConnected) return;
 
     const config = this.difficultyConfigs[this.difficulty] || this.difficultyConfigs.medium;
     const puck = this.physics.getPuckState();
+    const puckZ = puck.position.z;
+    const puckX = puck.position.x;
+    const puckVz = puck.velocity.z;
+    const puckVx = puck.velocity.x;
+    const puckSpeed = Math.hypot(puckVx, puckVz);
 
     // 1. CPU Serving flow: physically drive forward through puck
     if (this.state === AIR_HOCKEY_STATES.SERVE_WAIT && this.server === 2) {
@@ -240,34 +249,62 @@ export class AirHockeyGame {
         this.aiTargetPos.set(0, AIR_HOCKEY_TABLE_HEIGHT, 0.92);
       }
     } else if (this.state === AIR_HOCKEY_STATES.ACTIVE_PLAY) {
-      // 2. In-Play Decision Logic
-      const puckZ = puck.position.z;
-      const puckX = puck.position.x;
-      const puckVz = puck.velocity.z;
-      const puckVx = puck.velocity.x;
-      const puckSpeed = Math.hypot(puckVx, puckVz);
+      // 2. Active Play Flow
+      if (this.aiSwingTimer > 0) {
+        // A. Committed Forward Strike in progress
+        this.aiSwingTimer -= dt;
+        // Terminate swing early only if puck has successfully launched into P1 half
+        if (puckZ < 0.05 || puckVz < -0.8) {
+          this.aiSwingTimer = 0;
+        }
+      } else if (puckZ > -0.05) {
+        // B. Puck is in CPU territory or crossing center line
+        const isBehindMallet = puckZ > (this.p2Pos.z + 0.01);
+        const isLateralOverlap = Math.abs(this.p2Pos.x - puckX) < (this.strikerRadius + 0.05);
 
-      if (puckZ > -0.05) {
-        // Puck is in CPU territory or crossing centerline: ATTACK / INTERCEPT!
-        const timeToIntercept = Math.max(0.04, Math.min(0.35, (this.p2Pos.z - puckZ) / Math.max(1.0, puckVz)));
-        let desiredX = puckX + puckVx * (timeToIntercept * 0.6) + (Math.sin(Date.now() * 0.005) * config.errorMargin);
-        desiredX = THREE.MathUtils.clamp(desiredX, this.p2Bounds.minX, this.p2Bounds.maxX);
-
-        const desiredZ = THREE.MathUtils.clamp(puckZ + 0.12, Math.max(this.p2Bounds.minZ, config.maxReachZ), this.p2Bounds.maxZ);
-
-        const distToPuck = Math.hypot(this.p2Pos.x - puckX, this.p2Pos.z - puckZ);
-        if (distToPuck < 0.22) {
-          this.aiTargetPos.x = desiredX;
-          const strikeReach = 0.08 * (config.strikePower || 1.0);
-          this.aiTargetPos.z = Math.max(this.p2Bounds.minZ, puckZ - strikeReach); // Strike through!
+        if (isBehindMallet && isLateralOverlap) {
+          // B1. OWN-GOAL PREVENTION / FLANK RECOVERY:
+          // Mallet is between the puck and P1 territory, dangerously aligned with puck in X!
+          // NEVER move in +Z towards own goal while in front of the puck!
+          // Instead, flank toward center lane (X -> 0) while maintaining Z forward of the puck:
+          const flankX = puckX > 0 ? Math.max(0.0, puckX - 0.22) : Math.min(0.0, puckX + 0.22);
+          this.aiTargetPos.x = flankX;
+          this.aiTargetPos.z = Math.min(this.p2Pos.z, puckZ - 0.06);
+        } else if (isBehindMallet && !isLateralOverlap) {
+          // B2. Lateral clearance achieved: safely retreat behind the puck
+          this.aiTargetPos.x = this.p2Pos.x;
+          this.aiTargetPos.z = Math.min(this.p2Bounds.maxZ, puckZ + 0.12);
         } else {
-          this.aiTargetPos.x = desiredX;
-          this.aiTargetPos.z = desiredZ;
+          // B3. Mallet is safely BEHIND the puck (Z >= puckZ): align or strike!
+          let strikeX;
+          if (Math.abs(puckX) > 0.28) {
+            // Rail shot: Mallet aligns slightly on the inside (0.025m inside of puck)
+            strikeX = puckX > 0 ? puckX - 0.025 : puckX + 0.025;
+          } else {
+            // Open ice: calculate lead intercept
+            const timeToIntercept = Math.max(0.04, Math.min(0.35, (this.p2Pos.z - puckZ) / Math.max(1.0, puckVz)));
+            strikeX = puckX + puckVx * (timeToIntercept * 0.5) + (Math.sin(Date.now() * 0.005) * config.errorMargin);
+            strikeX = THREE.MathUtils.clamp(strikeX, -0.38, 0.38);
+          }
+
+          const setupZ = Math.min(this.p2Bounds.maxZ, puckZ + 0.10);
+          const inPosition = (this.p2Pos.z > puckZ + 0.015) && (Math.abs(this.p2Pos.x - strikeX) < 0.06);
+
+          if (inPosition) {
+            // Trigger committed forward strike!
+            this.aiSwingTimer = 0.32;
+            const forwardReach = 0.25 * (config.strikePower || 1.0);
+            this.aiTargetPos.z = Math.max(this.p2Bounds.minZ, puckZ - forwardReach);
+            this.aiTargetPos.x = strikeX;
+          } else {
+            this.aiTargetPos.x = strikeX;
+            this.aiTargetPos.z = setupZ;
+          }
         }
       } else {
-        // Puck is in P1 territory: DEFENSIVE GOAL CREASE STANCE
+        // C. Puck is in Player 1 territory: DEFENSIVE GOAL CREASE STANCE
         const guardX = THREE.MathUtils.clamp(puckX * 0.65, -0.22, 0.22);
-        const guardZ = 0.82; // Safe distance in front of goal post (Z=1.07)
+        const guardZ = 0.82; // Safe distance in front of goal mouth
         this.aiTargetPos.set(guardX, AIR_HOCKEY_TABLE_HEIGHT, guardZ);
       }
     }
