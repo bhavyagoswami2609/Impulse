@@ -7,6 +7,9 @@
     <!-- MediaPipe dependencies via reliable CDN -->
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Barlow+Semi+Condensed:wght@600;700;800&family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;700&family=Plus+Jakarta+Sans:wght@500;600;700;800&family=Teko:wght@600;700&display=swap" rel="stylesheet" />
     <link rel="stylesheet" href="/src/style.css" />
   </head>
   <body>
@@ -15,80 +18,119 @@
 
     <!-- HUD Overlay Layer -->
     <div class="hud-layer">
-      <!-- Top Tournament Header & Scoreboard -->
+      <!-- Top Tournament Broadcast Bar -->
       <header class="scoreboard-header">
-        <div class="tournament-title">
-          <div class="brand-logo-pill">IMPULSE</div>
-          <div class="title-details">
-            <div id="match-category" class="match-category">TABLE TENNIS CHAMPIONSHIP</div>
-            <div class="mode-switcher">
-              <button id="btn-mode-tennis" class="mode-pill active" title="Switch to Table Tennis (Hotkey: T)">TABLE TENNIS</button>
-              <button id="btn-mode-hockey" class="mode-pill" title="Switch to Air Hockey (Hotkey: T)">AIR HOCKEY</button>
-            </div>
+        <!-- Left: Brand & Segmented Mode Switcher -->
+        <div class="header-brand-group">
+          <div class="brand-logo-pill">
+            <span class="brand-name">IMPULSE</span>
+            <span class="brand-sub">MATCH</span>
+          </div>
+
+          <div class="mode-switcher" role="tablist" aria-label="Game Mode Switcher">
+            <button id="btn-mode-tennis" class="mode-pill active" role="tab" aria-selected="true" title="Switch to Table Tennis (Hotkey: T)">
+              <svg class="nav-svg-icon" viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 3a14.5 14.5 0 0 0 0 18"/><path d="M3 12h18"/></svg>
+              <span>Table Tennis</span>
+            </button>
+            <button id="btn-mode-hockey" class="mode-pill" role="tab" aria-selected="false" title="Switch to Air Hockey (Hotkey: T)">
+              <svg class="nav-svg-icon" viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="4"/><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/></svg>
+              <span>Air Hockey</span>
+            </button>
           </div>
         </div>
 
-        <!-- Center Scoreboard -->
-        <div class="main-scoreboard">
-          <!-- Player 1 -->
-          <div class="player-score-card">
+        <!-- Center: Broadcast Scorebug -->
+        <div class="main-scoreboard" role="region" aria-label="Match Scoreboard">
+          <!-- Player 1 Box -->
+          <div class="player-score-card p1">
             <div class="player-badge p1">
-              <span id="p1-serve-dot" class="serve-dot active"></span>
+              <span id="p1-serve-dot" class="serve-dot active" title="Serving"></span>
               <span id="p1-label">P1 (HOST)</span>
             </div>
             <div id="p1-score" class="score-digit">0</div>
           </div>
 
-          <div class="vs-divider">VS</div>
+          <!-- Match Center Divider -->
+          <div class="score-meta-col">
+            <div id="match-category" class="match-category">TABLE TENNIS CHAMPIONSHIP</div>
+            <div class="vs-divider">VS</div>
+          </div>
 
-          <!-- Player 2 -->
-          <div class="player-score-card">
-            <div class="player-badge p2">
-              <span id="p2-serve-dot" class="serve-dot"></span>
-              <span id="p2-label">CPU (MED)</span>
-            </div>
+          <!-- Player 2 Box -->
+          <div class="player-score-card p2">
             <div id="p2-score" class="score-digit">0</div>
+            <div class="player-badge p2">
+              <span id="p2-label">CPU (MED)</span>
+              <span id="p2-serve-dot" class="serve-dot" title="Serving"></span>
+            </div>
           </div>
         </div>
 
-        <!-- Quick Controls -->
-        <div class="hud-actions">
+        <!-- Right: Utility & Controls Cluster -->
+        <div class="hud-actions" role="toolbar" aria-label="Match Controls">
           <button id="btn-bot-difficulty" class="hud-btn difficulty-btn medium" title="Change Bot Difficulty (Hotkey: D)">
+            <svg class="btn-svg" viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="16" rx="2"/><rect x="9" y="9" width="6" height="6"/><line x1="9" y1="1" x2="9" y2="4"/><line x1="15" y1="1" x2="15" y2="4"/><line x1="9" y1="20" x2="9" y2="23"/><line x1="15" y1="20" x2="15" y2="23"/><line x1="20" y1="9" x2="23" y2="9"/><line x1="20" y1="14" x2="23" y2="14"/><line x1="1" y1="9" x2="4" y2="9"/><line x1="1" y1="14" x2="4" y2="14"/></svg>
             <span id="bot-diff-text">BOT: MED</span>
           </button>
-          <button id="btn-reset-ball" class="hud-btn" title="Reset Ball (Hotkey: R)">
-            RESET
-          </button>
-          <button id="btn-serve-ball" class="hud-btn primary" title="Serve Ball (Hotkey: Space)">
-            SERVE
-          </button>
-          <button id="btn-calibrate-hand" class="hud-btn" title="Instant Hand & Face Calibration (Hotkey: C or show 🤟 Spider-Man gesture)">
-            CALIBRATE
-          </button>
-          <button id="btn-calib-settings" class="hud-btn" title="Calibration Sensitivity Settings" style="padding: 7px 10px;">
-            ⚙
-          </button>
-          <button id="btn-toggle-cam" class="hud-btn active" title="Toggle Webcam Motion Control (Hotkey: M)">
-            <span id="cam-btn-text">WEBCAM: ON</span>
-          </button>
+
           <button id="btn-camera-view" class="hud-btn" title="Change Camera View (Hotkey: V)">
+            <svg class="btn-svg" viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
             <span id="cam-view-text">CAM: P1</span>
           </button>
+
+          <button id="btn-toggle-cam" class="hud-btn active" title="Toggle Webcam Motion Control (Hotkey: M)">
+            <svg class="btn-svg" viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="23 7 16 12 23 17 23 7"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/></svg>
+            <span id="cam-btn-text">WEBCAM: ON</span>
+          </button>
+
           <button id="btn-toggle-facetrack" class="hud-btn vr-active" title="Toggle Head Tracking Perspective (Hotkey: F)">
+            <svg class="btn-svg" viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M8 14s1.5 2 4 2 4-2 4-2"/><line x1="9" y1="9" x2="9.01" y2="9"/><line x1="15" y1="9" x2="15.01" y2="9"/></svg>
             <span id="facetrack-btn-text">HEAD TRACKING: ON</span>
           </button>
-          <button id="btn-toggle-sound" class="hud-btn active" title="Toggle Audio">
+
+          <button id="btn-toggle-sound" class="hud-btn active" title="Toggle Audio (Hotkey: A)">
+            <svg class="btn-svg" viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/></svg>
             <span id="sound-icon">AUDIO ON</span>
           </button>
-          <button id="btn-multiplayer" class="hud-btn" title="Multiplayer WebRTC Match">
-            MULTIPLAYER
+
+          <button id="btn-calib-settings" class="hud-btn icon-only-btn" title="Calibration & Tracking Settings">
+            <svg class="btn-svg" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+          </button>
+
+          <button id="btn-multiplayer" class="hud-btn multiplayer-pill-btn" title="Multiplayer WebRTC Match">
+            <svg class="btn-svg" viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+            <span>MULTIPLAYER</span>
           </button>
         </div>
       </header>
 
+      <!-- Bottom Gameplay Actions Dock (Tactile, Accessible, Dedicated) -->
+      <div class="bottom-action-dock" role="toolbar" aria-label="Quick Gameplay Actions">
+        <button id="btn-serve-ball" class="hud-btn action-dock-btn primary" title="Serve Ball (Hotkey: Space)">
+          <svg class="dock-btn-icon" viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+          <span class="dock-label">SERVE</span>
+          <kbd class="key-badge">SPACE</kbd>
+        </button>
+
+        <button id="btn-reset-ball" class="hud-btn action-dock-btn" title="Reset Ball (Hotkey: R)">
+          <svg class="dock-btn-icon" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg>
+          <span class="dock-label">RESET</span>
+          <kbd class="key-badge">R</kbd>
+        </button>
+
+        <button id="btn-calibrate-hand" class="hud-btn action-dock-btn" title="Instant Hand & Face Calibration (Hotkey: C or show 🤟 gesture)">
+          <svg class="dock-btn-icon" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="22" y1="12" x2="18" y2="12"/><line x1="6" y1="12" x2="2" y2="12"/><line x1="12" y1="6" x2="12" y2="2"/><line x1="12" y1="22" x2="12" y2="18"/></svg>
+          <span class="dock-label">CALIBRATE</span>
+          <kbd class="key-badge">C</kbd>
+        </button>
+      </div>
+
       <!-- Player 2 Stamina / Power Gauge -->
       <div class="player-stamina-card p2">
-        <div class="tag-badge" id="hud-p2-badge">CPU (MED)</div>
+        <div class="stamina-meta">
+          <div class="tag-badge" id="hud-p2-badge">CPU (MED)</div>
+          <span class="stamina-caption">POWER</span>
+        </div>
         <div class="stamina-bar-container">
           <div id="p2-smash-fill" class="stamina-bar-fill"></div>
         </div>
@@ -96,7 +138,10 @@
 
       <!-- Player 1 Stamina / Power Gauge -->
       <div class="player-stamina-card p1">
-        <div class="tag-badge" id="hud-p1-badge">P1</div>
+        <div class="stamina-meta">
+          <div class="tag-badge" id="hud-p1-badge">P1</div>
+          <span class="stamina-caption">SMASH BOOST</span>
+        </div>
         <div class="stamina-bar-container">
           <div id="p1-smash-fill" class="stamina-bar-fill"></div>
         </div>
@@ -110,7 +155,8 @@
       <!-- Serve Callout Prompt -->
       <div class="serve-prompt-container">
         <div id="serve-prompt" class="serve-prompt">
-          OPEN HAND OR SWING THROUGH BALL TO SERVE
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v4"/><path d="M12 18v4"/><path d="m4.93 4.93 2.83 2.83"/><path d="m16.24 16.24 2.83 2.83"/><path d="M2 12h4"/><path d="M18 12h4"/><path d="m4.93 19.07 2.83-2.83"/><path d="m16.24 7.76 2.83-2.83"/></svg>
+          <span>OPEN HAND OR SWING THROUGH BALL TO SERVE</span>
         </div>
       </div>
 
@@ -121,17 +167,25 @@
             <span id="tracking-status-dot" class="status-indicator-dot active"></span>
             <span id="tracking-status-text">INPUT: WEBCAM</span>
           </div>
-          <button id="btn-pip-size" class="pip-size-btn" title="Toggle Camera Size (Big / Max / Min)">
-            <span id="pip-size-text">SIZE: BIG (420p)</span>
-          </button>
+          <div class="pip-controls">
+            <button id="btn-pip-size" class="pip-size-btn" title="Toggle Camera Size (Big / Max / Min)">
+              <span id="pip-size-text">SIZE: BIG (420p)</span>
+            </button>
+          </div>
         </div>
         <div class="pip-viewport">
           <video id="webcam-video" playsinline muted autoplay></video>
           <canvas id="webcam-canvas" width="420" height="236"></canvas>
         </div>
         <div class="pip-footer">
-          <span>DIR: <b id="pip-dir-badge" class="filter-badge">CENTER</b></span>
-          <span id="pip-fps">60 FPS</span>
+          <div class="pip-dir-wrapper">
+            <span class="pip-meta-label">MOTION:</span>
+            <span id="pip-dir-badge" class="filter-badge">CENTER</span>
+          </div>
+          <div class="pip-fps-wrapper">
+            <span class="pip-meta-label">FPS</span>
+            <span id="pip-fps" class="fps-val">60 FPS</span>
+          </div>
         </div>
       </div>
     </div>
@@ -139,23 +193,42 @@
     <!-- Motion Setup & Calibration Modal -->
     <div id="calibration-modal" class="modal-overlay">
       <div class="modal-card">
-        <button id="modal-calib-close" class="modal-close">&times;</button>
-        <div class="modal-title">MOTION TRACKING CALIBRATION</div>
+        <div class="modal-header-row">
+          <div class="modal-title-group">
+            <div class="modal-category">SYSTEM CONFIGURATION</div>
+            <div class="modal-title">Motion Tracking & Sensitivity</div>
+          </div>
+          <button id="modal-calib-close" class="modal-close" aria-label="Close Calibration Settings">&times;</button>
+        </div>
+        
         <p class="modal-subtitle">
-          Align your hand at a comfortable neutral center position in front of the camera. Movement is mapped relative to this reference point.
-          <br><span style="color: #00ddff; font-weight: 500;">💡 Tip: Show the 🤟 Spider-Man hand sign to the camera anytime to calibrate automatically!</span>
+          Align your hand at a comfortable neutral center position in front of the camera. All paddle movements are mapped relative to this reference point.
         </p>
+
+        <!-- Spider-Man Gesture Pro-Tip Card -->
+        <div class="tip-banner">
+          <div class="tip-icon-col">
+            <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 11V6a2 2 0 0 0-2-2v0a2 2 0 0 0-2 2v0"/><path d="M14 10V4a2 2 0 0 0-2-2v0a2 2 0 0 0-2 2v2"/><path d="M10 10.5V6a2 2 0 0 0-2-2v0a2 2 0 0 0-2 2v8"/><path d="M18 8a2 2 0 1 1 4 0v6a8 8 0 0 1-8 8h-2c-2.8 0-4.5-.86-5.99-2.34l-3.6-3.6a2 2 0 0 1 2.83-2.82L7 15"/></svg>
+          </div>
+          <div class="tip-content-col">
+            <span class="tip-title">Gesture Shortcut</span>
+            <span class="tip-body">Flash the 🤟 Spider-Man hand sign to the camera at any point during a rally to recalibrate your neutral center automatically.</span>
+          </div>
+        </div>
 
         <!-- Live Status Guide -->
         <div class="calibration-guide-box">
-          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px;">
-            <span style="font-size: 11px; color: #9cb3c9; text-transform: uppercase;">Current Motion State:</span>
+          <div class="calib-state-header">
+            <span class="calib-label">CURRENT MOTION VECTOR</span>
             <span id="calib-live-direction" class="live-direction-badge">CENTER</span>
           </div>
 
           <!-- Sensitivity Sliders -->
           <div class="calibration-row">
-            <label for="slider-sens-x">Horizontal Sensitivity (X):</label>
+            <div class="calib-row-info">
+              <label for="slider-sens-x">Horizontal Sensitivity</label>
+              <span class="calib-axis-hint">X-Axis Reach & Side Angles</span>
+            </div>
             <div class="slider-ctrl">
               <input id="slider-sens-x" type="range" min="1.0" max="4.0" step="0.1" value="2.4" />
               <span id="val-sens-x" class="slider-val">2.4x</span>
@@ -163,7 +236,10 @@
           </div>
 
           <div class="calibration-row">
-            <label for="slider-sens-y">Vertical Sensitivity (Y):</label>
+            <div class="calib-row-info">
+              <label for="slider-sens-y">Vertical Sensitivity</label>
+              <span class="calib-axis-hint">Y-Axis Elevation & Topspin Lift</span>
+            </div>
             <div class="slider-ctrl">
               <input id="slider-sens-y" type="range" min="1.0" max="3.5" step="0.1" value="1.8" />
               <span id="val-sens-y" class="slider-val">1.8x</span>
@@ -171,7 +247,10 @@
           </div>
 
           <div class="calibration-row">
-            <label for="slider-sens-z">Forward Reach Depth (Z):</label>
+            <div class="calib-row-info">
+              <label for="slider-sens-z">Forward Reach Depth</label>
+              <span class="calib-axis-hint">Z-Axis Swing & Attack Depth</span>
+            </div>
             <div class="slider-ctrl">
               <input id="slider-sens-z" type="range" min="1.0" max="3.5" step="0.1" value="2.0" />
               <span id="val-sens-z" class="slider-val">2.0x</span>
@@ -179,35 +258,52 @@
           </div>
 
           <div class="calibration-row">
-            <label for="slider-smooth">Motion Smoothing Rate:</label>
+            <div class="calib-row-info">
+              <label for="slider-smooth">Motion Smoothing Rate</label>
+              <span class="calib-axis-hint">Jitter Reduction vs Instant Snap</span>
+            </div>
             <div class="slider-ctrl">
               <input id="slider-smooth" type="range" min="14" max="40" step="2" value="28" />
               <span id="val-smooth" class="slider-val">28</span>
             </div>
           </div>
 
-          <div class="calibration-row" style="margin-top: 10px; border-top: 1px solid rgba(255, 255, 255, 0.08); padding-top: 10px;">
-            <label for="chk-invert-x">Mirror Camera / Invert X:</label>
-            <input id="chk-invert-x" type="checkbox" style="width: 18px; height: 18px; accent-color: #00ddff;" />
+          <div class="calibration-row switch-row">
+            <div class="calib-row-info">
+              <label for="chk-invert-x">Mirror Camera / Invert X</label>
+              <span class="calib-axis-hint">Natural selfie mirror orientation</span>
+            </div>
+            <label class="toggle-switch">
+              <input id="chk-invert-x" type="checkbox" />
+              <span class="toggle-track"></span>
+            </label>
           </div>
         </div>
 
-        <button id="btn-set-center-modal" class="modal-btn success" style="margin-bottom: 10px;">
-          LOCK CURRENT HAND & FACE AS CENTER (C)
-        </button>
-        <button id="btn-save-calib-modal" class="modal-btn">
-          APPLY & RESUME
-        </button>
+        <div class="modal-actions-row">
+          <button id="btn-set-center-modal" class="modal-btn success">
+            LOCK CURRENT HAND & FACE AS CENTER (C)
+          </button>
+          <button id="btn-save-calib-modal" class="modal-btn primary-action">
+            APPLY & RESUME
+          </button>
+        </div>
       </div>
     </div>
 
     <!-- Match Over / Victory Modal -->
     <div id="matchover-modal" class="modal-overlay">
       <div class="modal-card matchover-card">
+        <div class="trophy-badge">
+          <svg viewBox="0 0 24 24" width="36" height="36" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9H4.5a2.5 2.5 0 0 1 0-5H6"/><path d="M18 9h1.5a2.5 2.5 0 0 0 0-5H18"/><path d="M4 22h16"/><path d="M10 14.66V17c0 .55-.47.98-.97 1.21C7.85 18.75 7 20.24 7 22"/><path d="M14 14.66V17c0 .55.47.98.97 1.21C16.15 18.75 17 20.24 17 22"/><path d="M18 2H6v7a6 6 0 0 0 12 0V2Z"/></svg>
+        </div>
+        <div class="winner-label">MATCH CONCLUDED</div>
         <div id="matchover-headline" class="winner-headline">PLAYER 1 WINS</div>
-        <p style="font-size: 13px; color: #9cb3c9; margin-bottom: 6px; text-transform: uppercase;">Final Match Score</p>
-        <div id="matchover-final-score" class="final-score-box">11 - 8</div>
-        <button id="btn-match-restart" class="modal-btn success">
+        <div class="final-score-container">
+          <span class="final-score-caption">FINAL SCORE</span>
+          <div id="matchover-final-score" class="final-score-box">11 - 8</div>
+        </div>
+        <button id="btn-match-restart" class="modal-btn success restart-btn">
           START REMATCH
         </button>
       </div>
@@ -216,34 +312,44 @@
     <!-- Multiplayer Connection Modal -->
     <div id="multiplayer-modal" class="modal-overlay">
       <div class="modal-card">
-        <button id="modal-close-btn" class="modal-close">&times;</button>
-        <div class="modal-title">MULTIPLAYER NETWORK MATCH</div>
+        <div class="modal-header-row">
+          <div class="modal-title-group">
+            <div class="modal-category">P2P WEBRTC NETWORK</div>
+            <div class="modal-title">Real-Time Multiplayer Match</div>
+          </div>
+          <button id="modal-close-btn" class="modal-close" aria-label="Close Multiplayer">&times;</button>
+        </div>
         <p class="modal-subtitle">
-          Connect two browser tabs or two separate computers over WebRTC peer data channels.
-          Host runs physics calculation, Client camera rotates 180 degrees.
+          Connect two browser tabs or two separate computers over WebRTC peer data channels with binary sync and client prediction.
         </p>
 
         <!-- Host Section -->
         <div class="mp-section">
-          <h4>HOST SESSION (PLAYER 1)</h4>
-          <p style="font-size: 12px; color: #a0b6cd; margin-bottom: 8px;">
-            Generate a Room ID to invite Player 2.
+          <div class="mp-section-header">
+            <span class="mp-section-tag">HOST</span>
+            <h4>CREATE PRIVATE LOBBY (PLAYER 1)</h4>
+          </div>
+          <p class="mp-desc">
+            Generate an encrypted Room ID to invite an opponent.
           </p>
-          <button id="btn-create-room" class="modal-btn">CREATE ROOM</button>
+          <button id="btn-create-room" class="modal-btn">GENERATE ROOM ID</button>
           <div id="room-code-container" class="room-display" style="display: none;">
             <div id="display-room-code" class="room-code-tag">------</div>
-            <button id="btn-copy-link" class="hud-btn" style="height: 42px;">COPY LINK</button>
+            <button id="btn-copy-link" class="hud-btn copy-btn">COPY LINK</button>
           </div>
           <button id="btn-open-second-tab" class="modal-btn secondary" style="display: none;">
-            OPEN 2ND WINDOW (SPLIT SCREEN TEST)
+            OPEN 2ND WINDOW (LOCAL SPLIT-SCREEN)
           </button>
         </div>
 
         <!-- Client Section -->
         <div class="mp-section">
-          <h4>JOIN SESSION (PLAYER 2)</h4>
-          <p style="font-size: 12px; color: #a0b6cd; margin-bottom: 8px;">
-            Enter the shared Room ID string:
+          <div class="mp-section-header">
+            <span class="mp-section-tag client">JOIN</span>
+            <h4>JOIN EXISTING LOBBY (PLAYER 2)</h4>
+          </div>
+          <p class="mp-desc">
+            Enter the shared 6-character room code:
           </p>
           <input id="input-join-code" class="room-input" type="text" placeholder="e.g. TT-AB123" maxlength="12" />
           <button id="btn-join-room" class="modal-btn">CONNECT & PLAY</button>
