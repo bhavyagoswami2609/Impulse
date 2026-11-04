@@ -207,7 +207,7 @@ export class PhysicsWorld {
         }
 
         const vy = Math.abs(this.ballBody.velocity.y);
-        if (vy > 0.28 && now - this.lastTableBounceTime > 220) {
+        if (vy > 0.28 && now - this.lastTableBounceTime > 90) {
           this.lastTableBounceTime = now;
           const bouncePos = this.ballBody.position;
           const side = bouncePos.z < 0 ? 1 : 2;
@@ -486,14 +486,15 @@ export class PhysicsWorld {
       this.ballBody.angularVelocity.set(0, 0, 0);
     }
 
-    // Reset collision debounces
+    // Reset collision debounces (table debounce reset to 0 so the initial table bounce is never blocked)
     this.lastPaddleHitTime = performance.now();
-    this.lastTableBounceTime = performance.now();
+    this.lastTableBounceTime = 0;
   }
 
   holdBallForServe(server = 1, paddlePos = null) {
     this.isInRally = false;
     this.isServeFlight = false;
+    this.lastTableBounceTime = 0;
     this.ballBody.type = CANNON.Body.KINEMATIC;
     this.ballBody.collisionResponse = false;
     this.ballBody.velocity.set(0, 0, 0);

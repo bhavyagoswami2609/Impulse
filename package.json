@@ -7,7 +7,7 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "deploy": "vite build && npx wrangler pages deploy dist --project-name impulse --branch main"
+    "deploy": "vite build && npx --yes wrangler pages deploy dist --project-name impulse --branch main"
   },
   "dependencies": {
     "cannon-es": "^0.20.0",

@@ -206,7 +206,13 @@ export class TableTennisGame {
             this.awardPoint(1, 'ACE');
             return;
           }
-          if (this.bouncesP1 >= 1 && this.bouncesP2 === 1 && !this.netHitDuringServe) {
+          if (this.bouncesP1 >= 1 && this.bouncesP2 === 1) {
+            if (this.netHitDuringServe) {
+              this.netHitDuringServe = false;
+              this.onActionToast('LET - RE-SERVE');
+              this.resetRally(this.server);
+              return;
+            }
             // Legal serve completed
             this.isServiceInProgress = false;
             if (this.physics) this.physics.isServeFlight = false;
@@ -245,7 +251,13 @@ export class TableTennisGame {
             this.awardPoint(2, 'ACE');
             return;
           }
-          if (this.bouncesP2 >= 1 && this.bouncesP1 === 1 && !this.netHitDuringServe) {
+          if (this.bouncesP2 >= 1 && this.bouncesP1 === 1) {
+            if (this.netHitDuringServe) {
+              this.netHitDuringServe = false;
+              this.onActionToast('LET - RE-SERVE');
+              this.resetRally(this.server);
+              return;
+            }
             // Legal serve completed
             this.isServiceInProgress = false;
             if (this.physics) this.physics.isServeFlight = false;
