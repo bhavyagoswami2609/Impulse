@@ -1,5 +1,5 @@
 {
-  "name": "xbox-360-table-tennis",
+  "name": "impulse-table-tennis",
   "version": "1.0.0",
   "description": "3D Motion-Controlled Table Tennis Game using Three.js, Cannon-es, MediaPipe Hands and PeerJS",
   "type": "module",

@@ -67,7 +67,7 @@ function createProceduralTexture(width, height, drawCallback, fallbackColor = [2
  * - Center line dividing P1 and P2 domains with futuristic pinstripes
  * - Center face-off circle (R = 0.16m) with glowing crosshairs and alignment ring
  * - Goal crease arcs (R = 0.28m) at North and South ends
- * - Symmetrical Xbox 360 Championship badges facing each player
+ * - Symmetrical Championship badges facing each player
  * - Tournament safety warnings and technical boundary markings
  */
 export function createPlayfieldTexture() {
@@ -293,20 +293,20 @@ export function createPlayfieldTexture() {
       ctx.stroke();
     });
 
-    // 8. Xbox 360 Championship Branding
-    // Helper to draw the authentic Xbox 360 sphere logo & lettering
-    const drawXboxBranding = (x, y, isFlipped = false) => {
+    // 8. Tournament Championship Branding
+    // Helper to draw the authentic tournament sphere logo & lettering
+    const drawTournamentBranding = (x, y, isFlipped = false) => {
       ctx.save();
       ctx.translate(x, y);
       if (isFlipped) ctx.rotate(Math.PI);
 
-      // Xbox 360 glowing emblem sphere
+      // Glowing emblem sphere
       const sphereRadius = 40;
       const sphereGrad = ctx.createRadialGradient(-10, -10, 6, 0, 0, sphereRadius);
       sphereGrad.addColorStop(0, '#ffffff');
-      sphereGrad.addColorStop(0.35, '#a4f322');
-      sphereGrad.addColorStop(0.75, '#56b805');
-      sphereGrad.addColorStop(1, '#1b5e02');
+      sphereGrad.addColorStop(0.35, '#00ddff');
+      sphereGrad.addColorStop(0.75, '#0077b6');
+      sphereGrad.addColorStop(1, '#023e8a');
       ctx.fillStyle = sphereGrad;
       ctx.beginPath();
       ctx.arc(0, 0, sphereRadius, 0, Math.PI * 2);
@@ -319,10 +319,9 @@ export function createPlayfieldTexture() {
       ctx.arc(0, 0, sphereRadius, 0, Math.PI * 2);
       ctx.stroke();
 
-      // Stylized concave X
+      // Stylized concave emblem
       ctx.fillStyle = '#ffffff';
       ctx.beginPath();
-      // Upper wedge
       ctx.moveTo(0, -6);
       ctx.quadraticCurveTo(-14, -28, -26, -26);
       ctx.quadraticCurveTo(-12, -12, -4, 0);
@@ -341,7 +340,7 @@ export function createPlayfieldTexture() {
       ctx.fillStyle = '#102538';
       ctx.shadowColor = 'rgba(0, 180, 255, 0.45)';
       ctx.shadowBlur = 10;
-      ctx.fillText('XBOX 360', 0, 72);
+      ctx.fillText('IMPULSE', 0, 72);
 
       ctx.font = 'bold 18px "Segoe UI", sans-serif';
       ctx.fillStyle = '#0077b6';
@@ -358,9 +357,9 @@ export function createPlayfieldTexture() {
     };
 
     // South Player 1 Logo
-    drawXboxBranding(w / 2, 730, false);
+    drawTournamentBranding(w / 2, 730, false);
     // North Player 2 / CPU Logo (Rotated 180° so it faces Player 2)
-    drawXboxBranding(w / 2, h - 730, true);
+    drawTournamentBranding(w / 2, h - 730, true);
 
     // 9. Safety Warning Markings along rails
     const drawWarningStrip = (x, y, length, text) => {
@@ -1055,7 +1054,7 @@ export function createAirHockeyTable() {
  * - Low-friction felt base ring underneath with central air pocket recess
  * - Ergonomic tapered stem
  * - Cylindrical grip knob with 3 rubberized traction rings
- * - Top rounded dome cap with recessed Xbox 360 emblem jewel
+ * - Top rounded dome cap with recessed championship emblem jewel
  * - Two distinct tournament colorways:
  *   - 'p1' / 'cyan': Electric Cyan primary with Crimson/Graphite trim
  *   - 'p2' / 'cpu' / 'amber': Neon Amber primary with Graphite trim
@@ -1144,8 +1143,8 @@ export function createAirHockeyStriker(colorName = 'p1') {
   const baseDiskGeo = new THREE.CylinderGeometry(R, R, baseDiskHeight, 48);
   const baseDisk = new THREE.Mesh(baseDiskGeo, bodyMaterial);
   baseDisk.position.y = baseDiskHeight / 2;
-  baseDisk.castShadow = true;
-  baseDisk.receiveShadow = true;
+  baseDisk.castShadow = false;
+  baseDisk.receiveShadow = false;
   strikerGroup.add(baseDisk);
 
   // Chamfered deflection rim: prevents puck from riding over the striker
@@ -1153,8 +1152,8 @@ export function createAirHockeyStriker(colorName = 'p1') {
   const chamferGeo = new THREE.CylinderGeometry(0.041, R, chamferHeight, 48);
   const chamfer = new THREE.Mesh(chamferGeo, bodyMaterial);
   chamfer.position.y = baseDiskHeight + chamferHeight / 2;
-  chamfer.castShadow = true;
-  chamfer.receiveShadow = true;
+  chamfer.castShadow = false;
+  chamfer.receiveShadow = false;
   strikerGroup.add(chamfer);
 
   // Luminous Accent Ring channel at top of rim
@@ -1169,15 +1168,15 @@ export function createAirHockeyStriker(colorName = 'p1') {
   const stemGeo = new THREE.CylinderGeometry(0.018, 0.038, stemHeight, 36);
   const stem = new THREE.Mesh(stemGeo, bodyMaterial);
   stem.position.y = baseDiskHeight + chamferHeight + stemHeight / 2;
-  stem.castShadow = true;
-  stem.receiveShadow = true;
+  stem.castShadow = false;
+  stem.receiveShadow = false;
   strikerGroup.add(stem);
 
   // Contrast collar band at stem waist
   const collarGeo = new THREE.CylinderGeometry(0.020, 0.020, 0.006, 36);
   const collar = new THREE.Mesh(collarGeo, darkAccentMaterial);
   collar.position.y = baseDiskHeight + chamferHeight + stemHeight - 0.003;
-  collar.castShadow = true;
+  collar.castShadow = false;
   strikerGroup.add(collar);
 
   // 4. ERGONOMIC CYLINDRICAL GRIP KNOB (Y from 0.050 to 0.082m)
@@ -1185,8 +1184,8 @@ export function createAirHockeyStriker(colorName = 'p1') {
   const knobGeo = new THREE.CylinderGeometry(knobRadius, knobRadius, knobHeight, 36);
   const knob = new THREE.Mesh(knobGeo, bodyMaterial);
   knob.position.y = knobBaseY + knobHeight / 2;
-  knob.castShadow = true;
-  knob.receiveShadow = true;
+  knob.castShadow = false;
+  knob.receiveShadow = false;
   strikerGroup.add(knob);
 
   // 3 Rubberized Traction Grip Rings for thumb and fingertip purchase
@@ -1195,24 +1194,24 @@ export function createAirHockeyStriker(colorName = 'p1') {
     const ringMesh = new THREE.Mesh(ringGeo, gripRubberMaterial);
     ringMesh.rotation.x = Math.PI / 2;
     ringMesh.position.y = knobBaseY + 0.008 + i * 0.008;
-    ringMesh.castShadow = true;
+    ringMesh.castShadow = false;
     strikerGroup.add(ringMesh);
   }
 
-  // 5. TOP ROUNDED DOME CAP & XBOX 360 EMBLEM JEWEL (Y = 0.082m)
+  // 5. TOP ROUNDED DOME CAP & EMBLEM JEWEL (Y = 0.082m)
   const domeRadius = knobRadius;
   const domeGeo = new THREE.SphereGeometry(domeRadius, 32, 16, 0, Math.PI * 2, 0, Math.PI / 2);
   const dome = new THREE.Mesh(domeGeo, bodyMaterial);
   dome.position.y = knobBaseY + knobHeight;
-  dome.castShadow = true;
-  dome.receiveShadow = true;
+  dome.castShadow = false;
+  dome.receiveShadow = false;
   strikerGroup.add(dome);
 
-  // Xbox 360 Emblem Jewel on crown
+  // Championship Emblem Jewel on crown
   const jewelGeo = new THREE.CylinderGeometry(0.012, 0.012, 0.002, 24);
   const jewelMat = new THREE.MeshStandardMaterial({
-    color: 0x9bf00b,
-    emissive: 0x66cc00,
+    color: 0x00e5ff,
+    emissive: 0x00a2ff,
     emissiveIntensity: 0.9,
     metalness: 0.9,
     roughness: 0.1,
@@ -1290,8 +1289,8 @@ export function createAirHockeyPuck() {
   const bodyRadius = R - bevelOffset;
   const bodyGeo = new THREE.CylinderGeometry(bodyRadius, bodyRadius, H, 48);
   const body = new THREE.Mesh(bodyGeo, puckMat);
-  body.castShadow = true;
-  body.receiveShadow = true;
+  body.castShadow = false;
+  body.receiveShadow = false;
   puckGroup.add(body);
 
   // 2. BEVELED OUTER EDGES (Top and Bottom Chamfer Rings)
@@ -1301,15 +1300,15 @@ export function createAirHockeyPuck() {
   const topBevel = new THREE.Mesh(bevelRingGeo, puckMat);
   topBevel.rotation.x = Math.PI / 2;
   topBevel.position.y = H / 2 - bevelOffset;
-  topBevel.castShadow = true;
-  topBevel.receiveShadow = true;
+  topBevel.castShadow = false;
+  topBevel.receiveShadow = false;
   puckGroup.add(topBevel);
 
   const bottomBevel = new THREE.Mesh(bevelRingGeo, puckMat);
   bottomBevel.rotation.x = Math.PI / 2;
   bottomBevel.position.y = -H / 2 + bevelOffset;
-  bottomBevel.castShadow = true;
-  bottomBevel.receiveShadow = true;
+  bottomBevel.castShadow = false;
+  bottomBevel.receiveShadow = false;
   puckGroup.add(bottomBevel);
 
   // 3. RECESSED INNER CORE CIRCLE (Authentic arcade recessed face)
@@ -1327,7 +1326,7 @@ export function createAirHockeyPuck() {
 
   const topCore = new THREE.Mesh(innerCoreGeo, coreMat);
   topCore.position.y = H / 2 - coreDepth / 2;
-  topCore.castShadow = true;
+  topCore.castShadow = false;
   puckGroup.add(topCore);
 
   const bottomCore = new THREE.Mesh(innerCoreGeo, coreMat);

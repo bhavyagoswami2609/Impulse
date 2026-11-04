@@ -88,6 +88,24 @@ export class TableTennisGame {
     this.lastP1Pos = new THREE.Vector3(0, 0.95, -1.45);
     this.lastP1Vel = new THREE.Vector3();
 
+    // Pre-allocated Float32Array network buffers (eliminates JSON serialization & GC pauses)
+    this.syncBuffer = new Float32Array(22);
+    this.clientInputBuffer = new Float32Array(13);
+
+    // Remote opponent interpolation targets across incoming network ticks
+    this.remoteTargetPos = new THREE.Vector3(0, 0.95, 1.45);
+    this.remoteTargetRot = new THREE.Quaternion(0, 1, 0, 0);
+    this.remoteTargetVel = new THREE.Vector3();
+    this.hasRemoteInput = false;
+
+    // Client-side prediction for local paddle-ball collisions
+    this.predictedBallPos = new THREE.Vector3(0, 1.05, -1.35);
+    this.predictedBallVel = new THREE.Vector3();
+    this.predictedBallRot = new THREE.Quaternion();
+    this.clientBallTarget = new THREE.Vector3(0, 1.05, -1.35);
+    this.isPredictingHit = false;
+    this.predictedHitTimer = 0;
+
     this.setupPhysicsCallbacks();
     this.resetRally(1);
   }
@@ -763,18 +781,23 @@ export class TableTennisGame {
           localPaddleTransform.velocity
         );
 
-        // Visual paddle copies smoothed tracker transform directly
-        this.scene.paddle1.position.copy(localPaddleTransform.position);
-        this.scene.paddle1.quaternion.copy(localPaddleTransform.quaternion);
+        // In the render loop, interpolate (lerp) the local player's paddle position toward tracking target at 60 FPS
+        const lerpFactor = Math.min(1.0, 35.0 * dt);
+        this.scene.paddle1.position.lerp(localPaddleTransform.position, lerpFactor);
+        this.scene.paddle1.quaternion.slerp(localPaddleTransform.quaternion, lerpFactor);
       }
 
-      // Update Player 2
-      if (this.multiplayer.isConnected && this.clientP2Input) {
-        const p2Pos = new THREE.Vector3(...this.clientP2Input.pos);
-        const p2Quat = new THREE.Quaternion(...this.clientP2Input.rot);
-        this.physics.updatePaddle2(p2Pos, p2Quat, new THREE.Vector3());
-        this.scene.paddle2.position.copy(p2Pos);
-        this.scene.paddle2.quaternion.copy(p2Quat);
+      // Update Player 2 (Remote Multiplayer Client or CPU AI)
+      if (this.multiplayer.isConnected && (this.hasRemoteInput || this.clientP2Input)) {
+        // Apply linear (lerp) & spherical (slerp) interpolation across incoming network ticks
+        const lerpFactor = Math.min(1.0, 25.0 * dt);
+        this.scene.paddle2.position.lerp(this.remoteTargetPos, lerpFactor);
+        this.scene.paddle2.quaternion.slerp(this.remoteTargetRot, lerpFactor);
+        this.physics.updatePaddle2(
+          this.scene.paddle2.position,
+          this.scene.paddle2.quaternion,
+          this.remoteTargetVel
+        );
       } else {
         this.updateAI(dt);
         this.scene.paddle2.position.copy(this.aiCurrentPos);
@@ -826,77 +849,171 @@ export class TableTennisGame {
       this.scene.ball.position.copy(this.physics.ballBody.position);
       this.scene.ball.quaternion.copy(this.physics.ballBody.quaternion);
 
-      // Multiplayer broadcast
+      // High-performance flat binary array multiplayer broadcast (TAG_TT_SYNC = 1.0)
       if (this.multiplayer.isConnected) {
-        this.multiplayer.send({
-          type: 'sync',
-          ball: {
-            x: this.physics.ballBody.position.x,
-            y: this.physics.ballBody.position.y,
-            z: this.physics.ballBody.position.z,
-          },
-          p1: {
-            pos: [
-              this.scene.paddle1.position.x,
-              this.scene.paddle1.position.y,
-              this.scene.paddle1.position.z,
-            ],
-            rot: [
-              this.scene.paddle1.quaternion.x,
-              this.scene.paddle1.quaternion.y,
-              this.scene.paddle1.quaternion.z,
-              this.scene.paddle1.quaternion.w,
-            ],
-          },
-          scores: this.scores,
-          server: this.server,
-          state: this.state,
-          smash: this.smashEnergy,
-        });
+        const bPos = this.physics.ballBody.position;
+        const bVel = this.physics.ballBody.velocity;
+        const p1Pos = this.scene.paddle1.position;
+        const p1Rot = this.scene.paddle1.quaternion;
+
+        this.syncBuffer[0] = 1.0; // TAG_TT_SYNC
+        this.syncBuffer[1] = bPos.x;
+        this.syncBuffer[2] = bPos.y;
+        this.syncBuffer[3] = bPos.z;
+        this.syncBuffer[4] = bVel.x;
+        this.syncBuffer[5] = bVel.y;
+        this.syncBuffer[6] = bVel.z;
+        this.syncBuffer[7] = p1Pos.x;
+        this.syncBuffer[8] = p1Pos.y;
+        this.syncBuffer[9] = p1Pos.z;
+        this.syncBuffer[10] = p1Rot.x;
+        this.syncBuffer[11] = p1Rot.y;
+        this.syncBuffer[12] = p1Rot.z;
+        this.syncBuffer[13] = p1Rot.w;
+        this.syncBuffer[14] = this.scores[0];
+        this.syncBuffer[15] = this.scores[1];
+        this.syncBuffer[16] = this.server;
+        this.syncBuffer[17] = this.state === GAME_STATES.SERVE_WAIT ? 0 : (this.state === GAME_STATES.RALLY ? 1 : 2);
+        this.syncBuffer[18] = this.smashEnergy[0];
+        this.syncBuffer[19] = this.smashEnergy[1];
+        this.syncBuffer[20] = performance.now();
+        this.syncBuffer[21] = this.lastHitter;
+
+        this.multiplayer.send(this.syncBuffer);
       }
     } else {
-      // Client mode
+      // Client mode (P2)
       if (localPaddleTransform) {
-        this.scene.paddle2.position.copy(localPaddleTransform.position);
-        this.scene.paddle2.quaternion.copy(localPaddleTransform.quaternion);
+        // In the render loop, interpolate (lerp) the local player's paddle position toward tracking target at 60 FPS
+        const lerpFactor = Math.min(1.0, 35.0 * dt);
+        this.scene.paddle2.position.lerp(localPaddleTransform.position, lerpFactor);
+        this.scene.paddle2.quaternion.slerp(localPaddleTransform.quaternion, lerpFactor);
 
-        this.multiplayer.send({
-          type: 'client_input',
-          pos: [
-            localPaddleTransform.position.x,
-            localPaddleTransform.position.y,
-            localPaddleTransform.position.z,
-          ],
-          rot: [
-            localPaddleTransform.quaternion.x,
-            localPaddleTransform.quaternion.y,
-            localPaddleTransform.quaternion.z,
-            localPaddleTransform.quaternion.w,
-          ],
-        });
+        // High-performance flat binary array client input broadcast (TAG_TT_CLIENT_INPUT = 2.0)
+        const pPos = localPaddleTransform.position;
+        const pRot = localPaddleTransform.quaternion;
+        const pVel = localPaddleTransform.velocity;
+
+        this.clientInputBuffer[0] = 2.0; // TAG_TT_CLIENT_INPUT
+        this.clientInputBuffer[1] = pPos.x;
+        this.clientInputBuffer[2] = pPos.y;
+        this.clientInputBuffer[3] = pPos.z;
+        this.clientInputBuffer[4] = pRot.x;
+        this.clientInputBuffer[5] = pRot.y;
+        this.clientInputBuffer[6] = pRot.z;
+        this.clientInputBuffer[7] = pRot.w;
+        this.clientInputBuffer[8] = pVel.x;
+        this.clientInputBuffer[9] = pVel.y;
+        this.clientInputBuffer[10] = pVel.z;
+        this.clientInputBuffer[11] = localPaddleTransform.justOpenedHand ? 2.0 : (localPaddleTransform.isHandOpen ? 1.0 : 0.0);
+        this.clientInputBuffer[12] = performance.now();
+
+        this.multiplayer.send(this.clientInputBuffer);
       }
 
-      if (this.clientBallTarget) {
-        this.scene.ball.position.lerp(this.clientBallTarget, 0.45);
+      // Linear/Spherical interpolation for remote opponent (P1) paddle across incoming network ticks
+      const remoteLerpFactor = Math.min(1.0, 25.0 * dt);
+      this.scene.paddle1.position.lerp(this.remoteTargetPos, remoteLerpFactor);
+      this.scene.paddle1.quaternion.slerp(this.remoteTargetRot, remoteLerpFactor);
+
+      // Client-Side Prediction for local paddle-ball collisions
+      if (this.predictedHitTimer > 0) {
+        this.predictedHitTimer -= dt;
       }
-      if (this.clientP1Target) {
-        this.scene.paddle1.position.lerp(this.clientP1Target, 0.35);
-        this.scene.paddle1.quaternion.slerp(this.clientP1RotTarget, 0.35);
+
+      if (this.state === GAME_STATES.SERVE_WAIT) {
+        this.predictedBallPos.lerp(this.clientBallTarget, Math.min(1.0, 25.0 * dt));
+        this.predictedBallVel.set(0, 0, 0);
+      } else {
+        // Forward dead reckoning simulation
+        this.predictedBallVel.y -= 9.82 * dt;
+        this.predictedBallVel.multiplyScalar(Math.pow(0.992, dt * 60));
+        this.predictedBallPos.addScaledVector(this.predictedBallVel, dt);
+
+        // Table bounce prediction on receiver court (Z > 0)
+        if (this.predictedBallPos.y <= TABLE_HEIGHT + 0.02 && this.predictedBallPos.z > 0 && this.predictedBallPos.z < TABLE_LENGTH / 2) {
+          if (this.predictedBallVel.y < 0) {
+            this.predictedBallVel.y = -this.predictedBallVel.y * 0.88;
+            this.predictedBallPos.y = TABLE_HEIGHT + 0.02;
+            sound.playTableBounce(Math.min(1.0, Math.abs(this.predictedBallVel.y) / 3.0));
+            this.scene.triggerImpact(this.predictedBallPos, 0x00ff88);
+          }
+        }
+
+        // Local paddle-ball collision prediction:
+        // Client is P2 (+Z), ball moving toward client (+Z)
+        const p2Pos = this.scene.paddle2.position;
+        const p2Vel = localPaddleTransform ? localPaddleTransform.velocity : new THREE.Vector3();
+        const dz = this.predictedBallPos.z - p2Pos.z;
+        const dx = this.predictedBallPos.x - p2Pos.x;
+        const dy = this.predictedBallPos.y - p2Pos.y;
+        const dist = Math.hypot(dx, dy, dz);
+
+        if (this.predictedBallVel.z > 0 && dist < 0.20 && dz < 0.08 && dz > -0.14 && this.predictedHitTimer <= 0) {
+          // Instant client-side predicted return trajectory
+          const swingPower = Math.hypot(p2Vel.x, p2Vel.y, p2Vel.z);
+          const returnSpeed = Math.max(3.2, Math.min(6.2, 3.2 + swingPower * 0.65));
+          this.predictedBallVel.z = -returnSpeed;
+          this.predictedBallVel.x = (dx * -2.2) + (p2Vel.x * 0.35);
+          this.predictedBallVel.y = Math.max(1.1, 0.9 + Math.abs(dy) * 1.8);
+
+          sound.playPaddleHit(Math.min(1.0, returnSpeed / 5.0), false);
+          this.scene.triggerImpact(this.predictedBallPos, 0xff2a6d);
+          this.isPredictingHit = true;
+          this.predictedHitTimer = 0.35;
+        }
+
+        // Smooth reconciliation toward authoritative host ball state
+        const reconSpeed = (this.isPredictingHit && this.predictedBallVel.z < 0) ? 12.0 : 30.0;
+        this.predictedBallPos.lerp(this.clientBallTarget, Math.min(1.0, reconSpeed * dt));
       }
+
+      this.scene.ball.position.copy(this.predictedBallPos);
     }
   }
 
   handleNetworkData(packet) {
     if (!packet) return;
 
+    if (packet instanceof Float32Array) {
+      const tag = packet[0];
+      if (tag === 1.0 && this.multiplayer.role === 'client') {
+        // TAG_TT_SYNC
+        this.clientBallTarget.set(packet[1], packet[2], packet[3]);
+        if (!this.isPredictingHit || packet[6] < 0) {
+          this.predictedBallVel.set(packet[4], packet[5], packet[6]);
+          if (packet[6] < 0) this.isPredictingHit = false;
+        }
+
+        // Linear/spherical interpolation target for remote P1 paddle
+        this.remoteTargetPos.set(packet[7], packet[8], packet[9]);
+        this.remoteTargetRot.set(packet[10], packet[11], packet[12], packet[13]);
+
+        this.scores = [packet[14], packet[15]];
+        this.server = packet[16];
+        const stateCode = packet[17];
+        this.state = stateCode === 0 ? GAME_STATES.SERVE_WAIT : (stateCode === 1 ? GAME_STATES.RALLY : GAME_STATES.MATCH_OVER);
+        this.smashEnergy = [packet[18], packet[19]];
+
+        this.onScoreUpdate(this.scores);
+        this.onStateChange(this.state);
+      } else if (tag === 2.0 && this.multiplayer.role === 'host') {
+        // TAG_TT_CLIENT_INPUT
+        this.remoteTargetPos.set(packet[1], packet[2], packet[3]);
+        this.remoteTargetRot.set(packet[4], packet[5], packet[6], packet[7]);
+        this.remoteTargetVel.set(packet[8], packet[9], packet[10]);
+        this.hasRemoteInput = true;
+        this.clientP2HandState = packet[11];
+      }
+      return;
+    }
+
+    // Legacy JSON object support
     if (packet.type === 'sync' && this.multiplayer.role === 'client') {
       if (!this.clientBallTarget) this.clientBallTarget = new THREE.Vector3();
-      if (!this.clientP1Target) this.clientP1Target = new THREE.Vector3();
-      if (!this.clientP1RotTarget) this.clientP1RotTarget = new THREE.Quaternion();
-
       this.clientBallTarget.set(packet.ball.x, packet.ball.y, packet.ball.z);
-      this.clientP1Target.set(...packet.p1.pos);
-      this.clientP1RotTarget.set(...packet.p1.rot);
+      this.remoteTargetPos.set(...packet.p1.pos);
+      this.remoteTargetRot.set(...packet.p1.rot);
 
       this.scores = packet.scores;
       this.server = packet.server;
@@ -907,6 +1024,9 @@ export class TableTennisGame {
       this.onStateChange(this.state);
     } else if (packet.type === 'client_input' && this.multiplayer.role === 'host') {
       this.clientP2Input = packet;
+      if (packet.pos) this.remoteTargetPos.set(...packet.pos);
+      if (packet.rot) this.remoteTargetRot.set(...packet.rot);
+      this.hasRemoteInput = true;
     }
   }
 }

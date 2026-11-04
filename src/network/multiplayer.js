@@ -1,4 +1,15 @@
-import { Peer } from 'peerjs';
+import peerPkg from 'peerjs';
+const Peer = peerPkg?.Peer || peerPkg?.default?.Peer || peerPkg;
+
+/**
+ * Binary Packet Tags for low-latency Float32Array telemetry over WebRTC DataChannel
+ */
+export const PACKET_TAGS = {
+  TT_SYNC: 1.0,
+  TT_CLIENT_INPUT: 2.0,
+  HOCKEY_SYNC: 3.0,
+  HOCKEY_CLIENT_INPUT: 4.0,
+};
 
 /**
  * MultiplayerManager coordinates serverless WebRTC peer-to-peer connections using PeerJS
@@ -134,7 +145,13 @@ export class MultiplayerManager {
     });
 
     this.connection.on('data', (data) => {
-      this.callbacks.onDataReceived(data);
+      if (data instanceof ArrayBuffer) {
+        this.callbacks.onDataReceived(new Float32Array(data));
+      } else if (ArrayBuffer.isView(data) && !(data instanceof Float32Array)) {
+        this.callbacks.onDataReceived(new Float32Array(data.buffer, data.byteOffset, data.byteLength / 4));
+      } else {
+        this.callbacks.onDataReceived(data);
+      }
     });
 
     this.connection.on('close', () => {

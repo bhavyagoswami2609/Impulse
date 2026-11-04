@@ -4,7 +4,6 @@
   --primary-green: #00ff66;
   --primary-accent: #00ddff;
   --dark-bg: rgba(10, 16, 24, 0.88);
-  --xbox-green: #107c10;
   --hud-border: rgba(255, 255, 255, 0.18);
   --panel-glow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
 }
@@ -36,7 +35,7 @@ body, html {
 }
 
 /* ========================================================
-   XBOX 360 STYLE HUD OVERLAYS
+   TOURNAMENT CHAMPIONSHIP HUD OVERLAYS
    ======================================================== */
 .hud-layer {
   position: absolute;
@@ -68,16 +67,16 @@ body, html {
   gap: 12px;
 }
 
-.xbox-logo-pill {
-  background: linear-gradient(135deg, #107c10, #1eb81e);
+.brand-logo-pill {
+  background: linear-gradient(135deg, #0077b6, #00b4d8);
   color: #fff;
   font-family: 'Orbitron', sans-serif;
   font-size: 13px;
   font-weight: 800;
   padding: 5px 12px;
   border-radius: 4px;
-  letter-spacing: 1px;
-  box-shadow: 0 0 15px rgba(16, 124, 16, 0.6);
+  letter-spacing: 1.5px;
+  box-shadow: 0 0 15px rgba(0, 180, 216, 0.6);
 }
 
 .match-category {

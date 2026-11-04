@@ -247,7 +247,24 @@ export class FaceTracker {
           isProcessing = true;
           this.lastFrameTime = now;
           try {
-            await this.faceDetection.send({ image: this.videoElement });
+            // Downscale camera input to 320x240 for fast face detection
+            if (!this.inferenceCanvas) {
+              this.inferenceCanvas = typeof OffscreenCanvas !== 'undefined'
+                ? new OffscreenCanvas(320, 240)
+                : (typeof document !== 'undefined' ? document.createElement('canvas') : null);
+              if (this.inferenceCanvas) {
+                this.inferenceCanvas.width = 320;
+                this.inferenceCanvas.height = 240;
+                this.inferenceCtx = this.inferenceCanvas.getContext('2d', { willReadFrequently: true });
+              }
+            }
+
+            if (this.inferenceCtx && this.inferenceCanvas) {
+              this.inferenceCtx.drawImage(this.videoElement, 0, 0, 320, 240);
+              await this.faceDetection.send({ image: this.inferenceCanvas });
+            } else {
+              await this.faceDetection.send({ image: this.videoElement });
+            }
           } catch (err) {
             console.warn('Face tracking frame send error:', err);
           } finally {
@@ -538,7 +555,7 @@ export class FaceTracker {
   }
 
   /**
-   * Renders the Xbox 360-themed holographic face tracker HUD onto the PIP canvas.
+   * Renders the holographic face tracker HUD onto the PIP canvas.
    *
    * @param {CanvasRenderingContext2D} ctx PIP canvas 2D context
    * @param {number} width Canvas width

@@ -4,29 +4,37 @@ import {
   createPaddle,
   createBall,
   createArenaEnvironment,
+  createBakedTableShadow,
   TABLE_HEIGHT,
+  TABLE_WIDTH,
+  TABLE_LENGTH,
 } from './procedural_models.js';
 import {
   createAirHockeyTable,
   createAirHockeyStriker,
   createAirHockeyPuck,
   AIR_HOCKEY_TABLE_HEIGHT,
+  AIR_HOCKEY_TABLE_WIDTH,
+  AIR_HOCKEY_TABLE_LENGTH,
 } from './air_hockey_models.js';
 
 export class TableTennisScene {
   constructor(canvasContainer) {
     this.container = canvasContainer;
 
-    // 1. Renderer
+    // 1. Renderer - cap pixel ratio to 1.5 to reduce fragment shader & GPU fillrate overhead
     this.renderer = new THREE.WebGLRenderer({
       antialias: true,
       powerPreference: 'high-performance',
       alpha: false,
     });
     this.renderer.setSize(window.innerWidth, window.innerHeight);
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    // Disable real-time shadow map updates every frame on dynamic meshes
+    this.renderer.shadowMap.autoUpdate = false;
+    this.renderer.shadowMap.needsUpdate = true;
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
     this.renderer.toneMappingExposure = 1.15;
     this.container.appendChild(this.renderer.domElement);
@@ -76,6 +84,10 @@ export class TableTennisScene {
     // 5. Add Procedural Assets
     this.arena = createArenaEnvironment();
     this.scene.add(this.arena);
+
+    // Static baked shadow plane beneath the table (eliminates real-time dynamic shadow map overhead)
+    this.bakedTableShadow = createBakedTableShadow(TABLE_WIDTH, TABLE_LENGTH);
+    this.scene.add(this.bakedTableShadow);
 
     this.table = createTableTennisTable();
     this.scene.add(this.table);
@@ -309,6 +321,15 @@ export class TableTennisScene {
     if (this.puckTrailLine) this.puckTrailLine.visible = isHockey;
     if (this.puckShadow) this.puckShadow.visible = isHockey;
 
+    // Adjust baked shadow plane scale for active table footprint
+    if (this.bakedTableShadow) {
+      if (isHockey) {
+        this.bakedTableShadow.scale.set(AIR_HOCKEY_TABLE_WIDTH / TABLE_WIDTH, AIR_HOCKEY_TABLE_LENGTH / TABLE_LENGTH, 1);
+      } else {
+        this.bakedTableShadow.scale.set(1, 1, 1);
+      }
+    }
+
     // Adjust camera targets if in hockey mode
     if (isHockey) {
       this.views.host.position.set(0, 1.48, -2.15);
@@ -506,6 +527,7 @@ export class TableTennisScene {
     const height = window.innerHeight;
     this.camera.aspect = width / height;
     this.camera.updateProjectionMatrix();
+    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
     this.renderer.setSize(width, height);
   }
 }

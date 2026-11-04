@@ -150,6 +150,13 @@ export class HandTracker {
     this.cameraInstance = null;
     this.handsInstance = null;
 
+    // Decouple tracking from rendering: throttle camera inference to 30 FPS
+    this.targetInferenceFPS = 30;
+    this.inferenceIntervalMs = 1000 / this.targetInferenceFPS;
+    this.lastInferenceTime = 0;
+    this.inferenceCanvas = null;
+    this.inferenceCtx = null;
+
     // Control mode: starts as 'webcam' by default, falls back to 'mouse' if camera unavailable or toggled off
     this.controlMode = 'webcam';
     this.playerRole = 'host'; // 'host' (P1, South) or 'client' (P2, North)
@@ -441,12 +448,12 @@ export class HandTracker {
         }
 
         // 1. Request webcam access directly via native Web API.
-        // This triggers the browser's native camera permission dialog immediately.
+        // Downscale camera stream request to 480x360 instead of native high resolution
         const constraints = {
           audio: false,
           video: {
-            width: { ideal: 640 },
-            height: { ideal: 480 },
+            width: { ideal: 480 },
+            height: { ideal: 360 },
             facingMode: 'user',
           },
         };
@@ -575,20 +582,35 @@ export class HandTracker {
     const processFrame = async () => {
       if (!this.isTracking) return;
 
-      if (this.videoElement && this.videoElement.readyState >= 2) {
-        // Live camera preview: if not processing or no hand detected yet, keep canvas updated
-        if (this.canvasCtx && this.canvasElement && (!this.handDetected || performance.now() - this.lastDetectedTime > 600)) {
-          try {
-            this.canvasCtx.save();
-            this.canvasCtx.drawImage(this.videoElement, 0, 0, this.canvasElement.width, this.canvasElement.height);
-            this.canvasCtx.restore();
-          } catch (e) {}
-        }
-
-        if (!isProcessing && this.handsInstance) {
+      const now = performance.now();
+      if (
+        this.videoElement &&
+        this.videoElement.readyState >= 2 &&
+        this.videoElement.videoWidth > 0
+      ) {
+        // Decouple tracking from rendering: throttle camera inference to 30 FPS
+        if (!isProcessing && (now - this.lastInferenceTime >= this.inferenceIntervalMs) && this.handsInstance) {
           isProcessing = true;
+          this.lastInferenceTime = now;
           try {
-            await this.handsInstance.send({ image: this.videoElement });
+            // Downscale input canvas fed to tracking model to 320x240 instead of native resolution
+            if (!this.inferenceCanvas) {
+              this.inferenceCanvas = typeof OffscreenCanvas !== 'undefined'
+                ? new OffscreenCanvas(320, 240)
+                : (typeof document !== 'undefined' ? document.createElement('canvas') : null);
+              if (this.inferenceCanvas) {
+                this.inferenceCanvas.width = 320;
+                this.inferenceCanvas.height = 240;
+                this.inferenceCtx = this.inferenceCanvas.getContext('2d', { willReadFrequently: true });
+              }
+            }
+
+            if (this.inferenceCtx && this.inferenceCanvas) {
+              this.inferenceCtx.drawImage(this.videoElement, 0, 0, 320, 240);
+              await this.handsInstance.send({ image: this.inferenceCanvas });
+            } else {
+              await this.handsInstance.send({ image: this.videoElement });
+            }
           } catch (err) {
             console.warn('MediaPipe send frame error:', err);
           } finally {
@@ -597,7 +619,7 @@ export class HandTracker {
         }
       }
 
-      if (this.isTracking) {
+      if (this.isTracking && this.videoElement) {
         if ('requestVideoFrameCallback' in this.videoElement) {
           this.frameCallbackId = this.videoElement.requestVideoFrameCallback(processFrame);
         } else {

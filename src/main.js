@@ -28,6 +28,15 @@ class TableTennisApp {
       onConnected: this.onPeerConnected.bind(this),
       onDisconnected: this.onPeerDisconnected.bind(this),
       onDataReceived: (packet) => {
+        if (packet instanceof Float32Array) {
+          const tag = packet[0];
+          if (tag === 3.0 || tag === 4.0) {
+            this.hockeyGame.handleNetworkData(packet);
+          } else {
+            this.game.handleNetworkData(packet);
+          }
+          return;
+        }
         if (packet && packet.type && packet.type.startsWith('hockey')) {
           this.hockeyGame.handleNetworkData(packet);
         } else {
@@ -1084,8 +1093,8 @@ class TableTennisApp {
           }
         } else {
           if (this.scene.paddle1) {
-            this.scene.paddle1.position.copy(localPaddleTransform.position);
-            this.scene.paddle1.quaternion.copy(localPaddleTransform.quaternion);
+            this.scene.paddle1.position.lerp(localPaddleTransform.position, Math.min(1.0, 35.0 * deltaTime));
+            this.scene.paddle1.quaternion.slerp(localPaddleTransform.quaternion, Math.min(1.0, 35.0 * deltaTime));
           }
         }
       }

@@ -80,6 +80,22 @@ export class AirHockeyGame {
     // Multi-puck / Network synchronization
     this.clientP2Input = null;
 
+    // Pre-allocated Float32Array network buffers (zero GC allocations during 60 FPS gameplay)
+    this.syncBuffer = new Float32Array(15);
+    this.clientInputBuffer = new Float32Array(6);
+
+    // Remote opponent interpolation targets
+    this.remoteTargetPos = new THREE.Vector3(0, AIR_HOCKEY_TABLE_HEIGHT, 0.65);
+    this.remoteTargetVel = new THREE.Vector3();
+    this.hasRemoteInput = false;
+
+    // Client-side prediction for puck & local striker collisions
+    this.predictedPuckPos = new THREE.Vector3(0, AIR_HOCKEY_TABLE_HEIGHT + 0.0038, 0);
+    this.predictedPuckVel = new THREE.Vector3();
+    this.clientPuckTarget = new THREE.Vector3(0, AIR_HOCKEY_TABLE_HEIGHT + 0.0038, 0);
+    this.isPredictingHit = false;
+    this.predictedHitTimer = 0;
+
     this.setupPhysicsCallbacks();
     this.resetPuckForServe(1);
   }
@@ -349,11 +365,11 @@ export class AirHockeyGame {
       }
 
       // 2. Update Player 2 Striker (Multiplayer client or CPU AI)
-      if (this.multiplayer.isConnected && this.clientP2Input) {
+      if (this.multiplayer.isConnected && (this.hasRemoteInput || this.clientP2Input)) {
         this.p2PrevPos.copy(this.p2Pos);
-        const [cx, , cz] = this.clientP2Input.pos;
-        const clampedP2 = this.physics.clampStrikerPosition(2, { x: cx, z: cz });
-        this.p2Pos.set(clampedP2.x, AIR_HOCKEY_TABLE_HEIGHT, clampedP2.z);
+        // Apply linear interpolation to remote opponent striker across network ticks
+        const lerpFactor = Math.min(1.0, 25.0 * dt);
+        this.p2Pos.lerp(this.remoteTargetPos, lerpFactor);
         if (dt > 0.0001) {
           this.p2Vel.subVectors(this.p2Pos, this.p2PrevPos).divideScalar(dt);
         }
@@ -385,17 +401,25 @@ export class AirHockeyGame {
         this.scene.puck.rotation.y += puckState.spin * dt;
       }
 
-      // 5. Multiplayer State Broadcast
+      // 5. High-performance flat binary array multiplayer broadcast (TAG_HOCKEY_SYNC = 3.0)
       if (this.multiplayer.isConnected) {
-        this.multiplayer.send({
-          type: 'hockey_sync',
-          puck: { x: puckState.position.x, z: puckState.position.z },
-          p1: [this.p1Pos.x, this.p1Pos.z],
-          p2: [this.p2Pos.x, this.p2Pos.z],
-          scores: this.scores,
-          server: this.server,
-          state: this.state,
-        });
+        this.syncBuffer[0] = 3.0; // TAG_HOCKEY_SYNC
+        this.syncBuffer[1] = puckState.position.x;
+        this.syncBuffer[2] = puckState.position.z;
+        this.syncBuffer[3] = puckState.velocity.x;
+        this.syncBuffer[4] = puckState.velocity.z;
+        this.syncBuffer[5] = puckState.spin;
+        this.syncBuffer[6] = this.p1Pos.x;
+        this.syncBuffer[7] = this.p1Pos.z;
+        this.syncBuffer[8] = this.p2Pos.x;
+        this.syncBuffer[9] = this.p2Pos.z;
+        this.syncBuffer[10] = this.scores[0];
+        this.syncBuffer[11] = this.scores[1];
+        this.syncBuffer[12] = this.server;
+        this.syncBuffer[13] = this.state === AIR_HOCKEY_STATES.SERVE_WAIT ? 0 : (this.state === AIR_HOCKEY_STATES.ACTIVE_PLAY ? 1 : 2);
+        this.syncBuffer[14] = performance.now();
+
+        this.multiplayer.send(this.syncBuffer);
       }
     } else {
       // Client mode (P2)
@@ -410,17 +434,62 @@ export class AirHockeyGame {
           this.scene.striker2.position.copy(this.p2Pos);
         }
 
-        this.multiplayer.send({
-          type: 'hockey_client_input',
-          pos: [clampedP2.x, AIR_HOCKEY_TABLE_HEIGHT, clampedP2.z],
-        });
+        // High-performance flat binary array client input broadcast (TAG_HOCKEY_CLIENT_INPUT = 4.0)
+        this.clientInputBuffer[0] = 4.0; // TAG_HOCKEY_CLIENT_INPUT
+        this.clientInputBuffer[1] = clampedP2.x;
+        this.clientInputBuffer[2] = clampedP2.z;
+        this.clientInputBuffer[3] = localPaddleTransform.velocity ? localPaddleTransform.velocity.x : 0;
+        this.clientInputBuffer[4] = localPaddleTransform.velocity ? localPaddleTransform.velocity.z : 0;
+        this.clientInputBuffer[5] = performance.now();
+
+        this.multiplayer.send(this.clientInputBuffer);
       }
 
-      if (this.clientPuckTarget && this.scene.puck) {
-        this.scene.puck.position.lerp(this.clientPuckTarget, 0.45);
+      // Linear interpolation to remote opponent (P1) striker across network ticks
+      if (this.scene.striker1) {
+        this.scene.striker1.position.lerp(this.remoteTargetPos, Math.min(1.0, 25.0 * dt));
       }
-      if (this.clientP1Target && this.scene.striker1) {
-        this.scene.striker1.position.lerp(this.clientP1Target, 0.35);
+
+      // Client-Side Prediction for puck & local striker-puck collisions
+      if (this.predictedHitTimer > 0) {
+        this.predictedHitTimer -= dt;
+      }
+
+      if (this.state === AIR_HOCKEY_STATES.SERVE_WAIT) {
+        this.predictedPuckPos.lerp(this.clientPuckTarget, Math.min(1.0, 25.0 * dt));
+        this.predictedPuckVel.set(0, 0, 0);
+      } else {
+        // Forward dead reckoning simulation
+        this.predictedPuckPos.x += this.predictedPuckVel.x * dt;
+        this.predictedPuckPos.z += this.predictedPuckVel.z * dt;
+        this.predictedPuckVel.multiplyScalar(Math.pow(0.994, dt * 60));
+
+        // Local striker-puck collision prediction
+        const p2Pos = this.p2Pos;
+        const dist = Math.hypot(this.predictedPuckPos.x - p2Pos.x, this.predictedPuckPos.z - p2Pos.z);
+        const minDist = 0.050 + 0.026; // strikerRadius + puckRadius = 0.076m
+        if (this.predictedPuckVel.z > 0 && dist < minDist + 0.015 && this.predictedHitTimer <= 0) {
+          this.predictedPuckVel.z = -Math.max(2.5, Math.abs(this.predictedPuckVel.z) * 1.1);
+          this.predictedPuckVel.x = (this.predictedPuckPos.x - p2Pos.x) * 15.0;
+          sound.playStrikerHit(1.2);
+          if (this.scene && this.scene.triggerImpact) {
+            this.scene.triggerImpact(p2Pos, 0x00ffcc);
+          }
+          this.isPredictingHit = true;
+          this.predictedHitTimer = 0.25;
+        }
+
+        // Smooth reconciliation toward authoritative host puck target
+        const reconSpeed = (this.isPredictingHit && this.predictedPuckVel.z < 0) ? 12.0 : 30.0;
+        this.predictedPuckPos.lerp(this.clientPuckTarget, Math.min(1.0, reconSpeed * dt));
+      }
+
+      if (this.scene.puck) {
+        this.scene.puck.position.set(
+          this.predictedPuckPos.x,
+          AIR_HOCKEY_TABLE_HEIGHT + 0.0038,
+          this.predictedPuckPos.z
+        );
       }
     }
   }
@@ -428,12 +497,40 @@ export class AirHockeyGame {
   handleNetworkData(packet) {
     if (!packet) return;
 
+    if (packet instanceof Float32Array) {
+      const tag = packet[0];
+      if (tag === 3.0 && this.multiplayer.role === 'client') {
+        // TAG_HOCKEY_SYNC
+        this.clientPuckTarget.set(packet[1], AIR_HOCKEY_TABLE_HEIGHT + 0.0038, packet[2]);
+        if (!this.isPredictingHit || packet[4] < 0) {
+          this.predictedPuckVel.set(packet[3], 0, packet[4]);
+          if (packet[4] < 0) this.isPredictingHit = false;
+        }
+
+        // Remote opponent (P1) target for linear interpolation
+        this.remoteTargetPos.set(packet[6], AIR_HOCKEY_TABLE_HEIGHT, packet[7]);
+
+        this.scores = [packet[10], packet[11]];
+        this.server = packet[12];
+        const stateCode = packet[13];
+        this.state = stateCode === 0 ? AIR_HOCKEY_STATES.SERVE_WAIT : (stateCode === 1 ? AIR_HOCKEY_STATES.ACTIVE_PLAY : AIR_HOCKEY_STATES.MATCH_OVER);
+
+        this.onScoreUpdate(this.scores);
+        this.onStateChange(this.state);
+      } else if (tag === 4.0 && this.multiplayer.role === 'host') {
+        // TAG_HOCKEY_CLIENT_INPUT
+        this.remoteTargetPos.set(packet[1], AIR_HOCKEY_TABLE_HEIGHT, packet[2]);
+        this.remoteTargetVel.set(packet[3], 0, packet[4]);
+        this.hasRemoteInput = true;
+      }
+      return;
+    }
+
+    // Legacy JSON object support
     if (packet.type === 'hockey_sync' && this.multiplayer.role === 'client') {
       if (!this.clientPuckTarget) this.clientPuckTarget = new THREE.Vector3();
-      if (!this.clientP1Target) this.clientP1Target = new THREE.Vector3();
-
       this.clientPuckTarget.set(packet.puck.x, AIR_HOCKEY_TABLE_HEIGHT + 0.0038, packet.puck.z);
-      this.clientP1Target.set(packet.p1[0], AIR_HOCKEY_TABLE_HEIGHT, packet.p1[1]);
+      this.remoteTargetPos.set(packet.p1[0], AIR_HOCKEY_TABLE_HEIGHT, packet.p1[1]);
 
       this.scores = packet.scores;
       this.server = packet.server;
@@ -443,6 +540,8 @@ export class AirHockeyGame {
       this.onStateChange(this.state);
     } else if (packet.type === 'hockey_client_input' && this.multiplayer.role === 'host') {
       this.clientP2Input = packet;
+      if (packet.pos) this.remoteTargetPos.set(packet.pos[0], AIR_HOCKEY_TABLE_HEIGHT, packet.pos[2]);
+      this.hasRemoteInput = true;
     }
   }
 }

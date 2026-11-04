@@ -77,7 +77,7 @@ function createNetTexture() {
 }
 
 /**
- * Creates procedural sponsor banner texture inspired by Xbox 360 tennis titles
+ * Creates procedural sponsor banner texture inspired by pro tennis championship titles
  */
 function createBannerTexture(title, subtitle = 'WORLD CHAMPIONSHIP') {
   const canvas = document.createElement('canvas');
@@ -295,7 +295,7 @@ export function createPaddle(primaryColor = 'red') {
   const blade = new THREE.Mesh(bladeGeo, woodMat);
   blade.rotation.x = Math.PI / 2;
   blade.position.y = bladeRadius;
-  blade.castShadow = true;
+  blade.castShadow = false;
   paddleGroup.add(blade);
 
   const rubberGeo = new THREE.CylinderGeometry(bladeRadius - 0.001, bladeRadius - 0.001, rubberThickness, 36);
@@ -307,7 +307,7 @@ export function createPaddle(primaryColor = 'red') {
   const redFace = new THREE.Mesh(rubberGeo, redRubberMat);
   redFace.rotation.x = Math.PI / 2;
   redFace.position.set(0, bladeRadius, -bladeThickness / 2 - rubberThickness / 2);
-  redFace.castShadow = true;
+  redFace.castShadow = false;
   paddleGroup.add(redFace);
 
   const blackRubberMat = new THREE.MeshStandardMaterial({
@@ -318,7 +318,7 @@ export function createPaddle(primaryColor = 'red') {
   const blackFace = new THREE.Mesh(rubberGeo, blackRubberMat);
   blackFace.rotation.x = Math.PI / 2;
   blackFace.position.set(0, bladeRadius, bladeThickness / 2 + rubberThickness / 2);
-  blackFace.castShadow = true;
+  blackFace.castShadow = false;
   paddleGroup.add(blackFace);
 
   const edgeGeo = new THREE.TorusGeometry(bladeRadius, (bladeThickness + rubberThickness * 2) / 2, 8, 36);
@@ -343,7 +343,7 @@ export function createPaddle(primaryColor = 'red') {
   });
   const handle = new THREE.Mesh(handleGeo, handleWoodMat);
   handle.position.y = -handleLength / 2 + 0.01;
-  handle.castShadow = true;
+  handle.castShadow = false;
   handleGroup.add(handle);
 
   const stripeGeo = new THREE.BoxGeometry(0.006, handleLength - 0.01, handleThickness + 0.002);
@@ -378,7 +378,7 @@ export function createBall() {
   });
 
   const ballMesh = new THREE.Mesh(ballGeo, ballMat);
-  ballMesh.castShadow = true;
+  ballMesh.castShadow = false;
   ballMesh.receiveShadow = false;
   ballGroup.add(ballMesh);
 
@@ -402,7 +402,7 @@ export function createBall() {
 }
 
 /**
- * Creates the immersive Xbox 360 style arena environment
+ * Creates the immersive tournament arena environment
  */
 export function createArenaEnvironment() {
   const arenaGroup = new THREE.Group();
@@ -423,7 +423,7 @@ export function createArenaEnvironment() {
 
   const barrierHeight = 0.95;
   const barrierMatSide = new THREE.MeshStandardMaterial({
-    map: createBannerTexture('XBOX 360 TABLE TENNIS', 'SMASH CHAMPIONSHIP'),
+    map: createBannerTexture('IMPULSE TABLE TENNIS', 'SMASH CHAMPIONSHIP'),
     roughness: 0.4,
   });
   const bannerMatFar = new THREE.MeshStandardMaterial({
@@ -505,4 +505,49 @@ export function createArenaEnvironment() {
   arenaGroup.add(createJudge(3.5, 7.2));
 
   return arenaGroup;
+}
+
+/**
+ * Creates a static baked shadow plane beneath the table.
+ * Uses a soft radial/box gradient to simulate realistic ambient occlusion & contact shadow on the floor
+ * with zero real-time GPU shadow map update overhead.
+ */
+export function createBakedTableShadow(width = TABLE_WIDTH, length = TABLE_LENGTH) {
+  let texture = null;
+  if (typeof document !== 'undefined' && document.createElement) {
+    try {
+      const canvas = document.createElement('canvas');
+      canvas.width = 256;
+      canvas.height = 256;
+      const ctx = canvas.getContext('2d');
+      if (ctx) {
+        const cx = 128;
+        const cy = 128;
+        const grad = ctx.createRadialGradient(cx, cy, 35, cx, cy, 124);
+        grad.addColorStop(0, 'rgba(0, 0, 0, 0.72)');
+        grad.addColorStop(0.5, 'rgba(0, 0, 0, 0.42)');
+        grad.addColorStop(0.8, 'rgba(0, 0, 0, 0.12)');
+        grad.addColorStop(1, 'rgba(0, 0, 0, 0)');
+        ctx.fillStyle = grad;
+        ctx.fillRect(0, 0, 256, 256);
+        texture = new THREE.CanvasTexture(canvas);
+      }
+    } catch (e) {}
+  }
+
+  const geo = new THREE.PlaneGeometry(width * 1.35, length * 1.18);
+  const mat = new THREE.MeshBasicMaterial({
+    map: texture,
+    color: texture ? 0xffffff : 0x000000,
+    transparent: true,
+    opacity: texture ? 0.75 : 0.45,
+    side: THREE.DoubleSide,
+    depthWrite: false,
+  });
+
+  const mesh = new THREE.Mesh(geo, mat);
+  mesh.rotation.x = -Math.PI / 2;
+  mesh.position.set(0, 0.003, 0); // Positioned slightly above the floor
+  mesh.name = 'BakedTableShadow';
+  return mesh;
 }

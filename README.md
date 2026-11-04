@@ -1,8 +1,8 @@
-# Xbox 360 Motion-Controlled Table Tennis
+# Impulse Motion-Controlled Table Tennis
 
 A serverless, browser-based 3D motion-controlled Table Tennis match built with **Three.js**, **Cannon-es**, **MediaPipe Hands**, and **PeerJS WebRTC**.
 
-Inspired by classic Xbox 360 sports titles (*Rockstar Games presents Table Tennis*, *Top Spin*), featuring tournament arena lighting, court line judges, authentic ball bounce physics, stamina/power meters, and real-time multiplayer.
+Featuring tournament arena lighting, court line judges, authentic ball bounce physics, stamina/power meters, and real-time multiplayer.
 
 ---
 
