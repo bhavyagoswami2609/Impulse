@@ -91,87 +91,16 @@ function createFloorTexture() {
 }
 
 /**
- * Creates procedural texture for the tabletop surface.
- * Bakes regulation 20mm perimeter white/gold boundary lines, 3mm center line,
- * and subtle IMPULSE watermarks directly into the texture.
- * Eliminates all floating plane meshes, completely preventing z-fighting and corner flickers!
- */
-function createTableTopTexture() {
-  return createSafeCanvasTexture(1024, 2048, (ctx, w, h) => {
-    // 1. Deep obsidian charcoal playing surface with satin radial gradient
-    const bgGrad = ctx.createRadialGradient(w / 2, h / 2, 100, w / 2, h / 2, h * 0.65);
-    bgGrad.addColorStop(0, '#171614');
-    bgGrad.addColorStop(0.65, '#131210');
-    bgGrad.addColorStop(1, '#0e0d0b');
-    ctx.fillStyle = bgGrad;
-    ctx.fillRect(0, 0, w, h);
-
-    // Fine satin micro-texture
-    ctx.fillStyle = 'rgba(255, 255, 255, 0.015)';
-    for (let y = 0; y < h; y += 4) {
-      ctx.fillRect(0, y, w, 1);
-    }
-
-    // 2. Regulation 20mm outer perimeter lines (scaled to 1024x2048: 20mm / 1.525m * 1024 ~= 13.4px)
-    const margin = 14;
-    ctx.lineWidth = margin;
-    // Outer border with subtle metallic amber gold sheen
-    ctx.strokeStyle = '#d4a03c';
-    ctx.strokeRect(margin / 2, margin / 2, w - margin, h - margin);
-
-    // Inner bright pinstripe for crisp visibility at viewing distances
-    ctx.lineWidth = 2;
-    ctx.strokeStyle = '#f5deb3';
-    ctx.strokeRect(margin, margin, w - margin * 2, h - margin * 2);
-
-    // 3. Regulation 3mm center division line down the length (Z axis)
-    ctx.lineWidth = 2.5;
-    ctx.strokeStyle = 'rgba(212, 160, 60, 0.85)';
-    ctx.beginPath();
-    ctx.moveTo(w / 2, margin);
-    ctx.lineTo(w / 2, h - margin);
-    ctx.stroke();
-
-    // 4. Center net zone line indicator (transverse across midline)
-    ctx.lineWidth = 1.5;
-    ctx.strokeStyle = 'rgba(212, 160, 60, 0.35)';
-    ctx.beginPath();
-    ctx.moveTo(margin, h / 2);
-    ctx.lineTo(w - margin, h / 2);
-    ctx.stroke();
-
-    // 5. Discreet IMPULSE championship corner watermarks
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.font = '700 24px "Syne", "Outfit", "Segoe UI", sans-serif';
-    ctx.fillStyle = 'rgba(212, 160, 60, 0.22)';
-
-    // Near player watermark
-    ctx.fillText('IMPULSE', w / 2, h * 0.18);
-    // Far player watermark (inverted orientation)
-    ctx.save();
-    ctx.translate(w / 2, h * 0.82);
-    ctx.rotate(Math.PI);
-    ctx.fillText('IMPULSE', 0, 0);
-    ctx.restore();
-  });
-}
-
-/**
- * Creates procedural texture for table tennis net mesh with dark smoked weave and subtle gold grid
+ * Creates procedural texture for table tennis net mesh (classic white grid on dark mesh)
  */
 function createNetTexture() {
   const tex = createSafeCanvasTexture(64, 64, (ctx) => {
-    ctx.fillStyle = 'rgba(12, 11, 10, 0.55)';
+    ctx.fillStyle = 'rgba(10, 15, 20, 0.4)';
     ctx.fillRect(0, 0, 64, 64);
 
-    ctx.strokeStyle = 'rgba(212, 160, 60, 0.45)';
-    ctx.lineWidth = 2.5;
+    ctx.strokeStyle = 'rgba(230, 235, 245, 0.85)';
+    ctx.lineWidth = 3;
     ctx.strokeRect(4, 4, 56, 56);
-
-    ctx.strokeStyle = 'rgba(235, 230, 220, 0.25)';
-    ctx.lineWidth = 1;
-    ctx.strokeRect(8, 8, 48, 48);
   });
 
   if (tex) {
@@ -235,82 +164,75 @@ function createBannerTexture(title = 'IMPULSE', subtitle = 'CHAMPIONSHIP ARENA')
 
 /**
  * Builds the regulation table tennis table using procedural geometric primitives.
- * Uses a baked high-res tabletop texture to completely eliminate floating plane z-fighting bugs.
- * Features dark luxury obsidian finish, metallic amber gold bevel trims, brushed anodized chassis,
- * solid brass/gold leveling feet, and brass net posts.
+ * Classic regulation ITTF tournament blue playing surface with crisp white boundary lines,
+ * sturdy undercarriage apron frame, tournament net assembly with steel posts,
+ * and heavy-duty polished steel legs with leveling feet.
  */
 export function createTableTennisTable() {
   const tableGroup = new THREE.Group();
   tableGroup.name = 'TableTennisTable';
 
-  // 1. TABLETOP MESH WITH BAKED REGULATION TEXTURE
-  const tableTopTexture = createTableTopTexture();
-  const topFaceMat = new THREE.MeshStandardMaterial({
-    map: tableTopTexture,
-    color: 0x141311,
-    roughness: 0.38,
-    metalness: 0.12,
+  // 1. REGULATION ITTF TOURNAMENT BLUE TABLETOP
+  const tableTopMaterial = new THREE.MeshStandardMaterial({
+    color: 0x163d70, // Classic regulation ITTF blue
+    roughness: 0.35,
+    metalness: 0.08,
   });
-
-  const edgeFaceMat = new THREE.MeshStandardMaterial({
-    color: 0x11100e,
-    roughness: 0.45,
-    metalness: 0.35,
-  });
-
-  // Box geometry faces: [Right(+X), Left(-X), Top(+Y), Bottom(-Y), Front(+Z), Back(-Z)]
-  const boxMaterials = [
-    edgeFaceMat,
-    edgeFaceMat,
-    topFaceMat,
-    edgeFaceMat,
-    edgeFaceMat,
-    edgeFaceMat,
-  ];
 
   const tableTopGeo = new THREE.BoxGeometry(TABLE_WIDTH, TABLE_THICKNESS, TABLE_LENGTH);
-  const tableTopMesh = new THREE.Mesh(tableTopGeo, boxMaterials);
+  const tableTopMesh = new THREE.Mesh(tableTopGeo, tableTopMaterial);
   tableTopMesh.position.y = TABLE_HEIGHT - TABLE_THICKNESS / 2;
   tableTopMesh.castShadow = true;
   tableTopMesh.receiveShadow = true;
   tableGroup.add(tableTopMesh);
 
-  // 2. METALLIC GOLD PERIMETER BEVEL TRIM
-  // Ultra-thin 3D rim hugging the top edges for a handcrafted luxury feel
-  const goldTrimMat = new THREE.MeshStandardMaterial({
-    color: 0xd4a03c,
-    roughness: 0.28,
-    metalness: 0.85,
+  // 2. CRISP REGULATION WHITE BOUNDARY LINES
+  // Uses polygonOffset to guarantee zero z-fighting/flicker on any GPU
+  const lineWidth = 0.02; // 20mm outer perimeter lines
+  const lineMat = new THREE.MeshBasicMaterial({
+    color: 0xffffff,
+    polygonOffset: true,
+    polygonOffsetFactor: -1.0,
+    polygonOffsetUnits: -4.0,
   });
+  const lineElevation = TABLE_HEIGHT + 0.0006;
 
-  const rimThickness = 0.004;
-  const rimDepth = 0.008;
+  // Left & Right Sidelines
+  const sideLineGeo = new THREE.PlaneGeometry(lineWidth, TABLE_LENGTH);
+  const leftSideLine = new THREE.Mesh(sideLineGeo, lineMat);
+  leftSideLine.rotation.x = -Math.PI / 2;
+  leftSideLine.position.set(-TABLE_WIDTH / 2 + lineWidth / 2, lineElevation, 0);
+  tableGroup.add(leftSideLine);
 
-  // Left & right edge gold trims
-  const sideRimGeo = new THREE.BoxGeometry(rimThickness, rimDepth, TABLE_LENGTH + rimThickness * 2);
-  const leftRim = new THREE.Mesh(sideRimGeo, goldTrimMat);
-  leftRim.position.set(-TABLE_WIDTH / 2 - rimThickness / 2, TABLE_HEIGHT - rimDepth / 2, 0);
-  tableGroup.add(leftRim);
+  const rightSideLine = new THREE.Mesh(sideLineGeo, lineMat);
+  rightSideLine.rotation.x = -Math.PI / 2;
+  rightSideLine.position.set(TABLE_WIDTH / 2 - lineWidth / 2, lineElevation, 0);
+  tableGroup.add(rightSideLine);
 
-  const rightRim = new THREE.Mesh(sideRimGeo, goldTrimMat);
-  rightRim.position.set(TABLE_WIDTH / 2 + rimThickness / 2, TABLE_HEIGHT - rimDepth / 2, 0);
-  tableGroup.add(rightRim);
+  // Near & Far Endlines
+  const endLineGeo = new THREE.PlaneGeometry(TABLE_WIDTH, lineWidth);
+  const nearEndLine = new THREE.Mesh(endLineGeo, lineMat);
+  nearEndLine.rotation.x = -Math.PI / 2;
+  nearEndLine.position.set(0, lineElevation, -TABLE_LENGTH / 2 + lineWidth / 2);
+  tableGroup.add(nearEndLine);
 
-  // Near & far end gold trims
-  const endRimGeo = new THREE.BoxGeometry(TABLE_WIDTH, rimDepth, rimThickness);
-  const nearRim = new THREE.Mesh(endRimGeo, goldTrimMat);
-  nearRim.position.set(0, TABLE_HEIGHT - rimDepth / 2, -TABLE_LENGTH / 2 - rimThickness / 2);
-  tableGroup.add(nearRim);
+  const farEndLine = new THREE.Mesh(endLineGeo, lineMat);
+  farEndLine.rotation.x = -Math.PI / 2;
+  farEndLine.position.set(0, lineElevation, TABLE_LENGTH / 2 - lineWidth / 2);
+  tableGroup.add(farEndLine);
 
-  const farRim = new THREE.Mesh(endRimGeo, goldTrimMat);
-  farRim.position.set(0, TABLE_HEIGHT - rimDepth / 2, TABLE_LENGTH / 2 + rimThickness / 2);
-  tableGroup.add(farRim);
+  // Center 3mm Division Line
+  const centerLineGeo = new THREE.PlaneGeometry(0.003, TABLE_LENGTH);
+  const centerLine = new THREE.Mesh(centerLineGeo, lineMat);
+  centerLine.rotation.x = -Math.PI / 2;
+  centerLine.position.set(0, lineElevation, 0);
+  tableGroup.add(centerLine);
 
-  // 3. UNDER-TABLE APRONS (Dark obsidian with gold inlay stripe)
+  // 3. UNDER-TABLE APRON FRAME (Classic tournament dark navy/black steel)
   const apronMaterial = new THREE.MeshStandardMaterial({
-    color: 0x0f0e0c,
+    color: 0x0c1e36,
     roughness: 0.5,
-    metalness: 0.4,
+    metalness: 0.35,
   });
 
   const apronHeight = 0.052;
@@ -323,69 +245,111 @@ export function createTableTennisTable() {
   rightApron.position.set(TABLE_WIDTH / 2 - 0.02, TABLE_HEIGHT - TABLE_THICKNESS - apronHeight / 2, 0);
   tableGroup.add(rightApron);
 
-  // Apron gold inlay racing pinstripes
-  const stripeGeo = new THREE.BoxGeometry(0.016, 0.005, TABLE_LENGTH - 0.04);
-  const leftStripe = new THREE.Mesh(stripeGeo, goldTrimMat);
-  leftStripe.position.set(-TABLE_WIDTH / 2 + 0.02, TABLE_HEIGHT - TABLE_THICKNESS - apronHeight / 2, 0);
-  tableGroup.add(leftStripe);
+  const endApronGeo = new THREE.BoxGeometry(TABLE_WIDTH - 0.04, apronHeight, 0.015);
+  const nearApron = new THREE.Mesh(endApronGeo, apronMaterial);
+  nearApron.position.set(0, TABLE_HEIGHT - TABLE_THICKNESS - apronHeight / 2, -TABLE_LENGTH / 2 + 0.02);
+  tableGroup.add(nearApron);
 
-  const rightStripe = new THREE.Mesh(stripeGeo, goldTrimMat);
-  rightStripe.position.set(TABLE_WIDTH / 2 - 0.02, TABLE_HEIGHT - TABLE_THICKNESS - apronHeight / 2, 0);
-  tableGroup.add(rightStripe);
+  const farApron = new THREE.Mesh(endApronGeo, apronMaterial);
+  farApron.position.set(0, TABLE_HEIGHT - TABLE_THICKNESS - apronHeight / 2, TABLE_LENGTH / 2 - 0.02);
+  tableGroup.add(farApron);
 
-  // 4. TOURNAMENT LEGS & CHASSIS
-  const legGeo = new THREE.BoxGeometry(0.048, TABLE_HEIGHT - TABLE_THICKNESS, 0.048);
-  const legMaterial = new THREE.MeshStandardMaterial({
-    color: 0x181715,
-    roughness: 0.4,
-    metalness: 0.65,
+  // 4. POLISHED TOURNAMENT STEEL LEGS & UNDERCARRIAGE
+  const legThickness = 0.050; // 50mm square steel tubing
+  const legHeight = TABLE_HEIGHT - TABLE_THICKNESS;
+  const legGeo = new THREE.BoxGeometry(legThickness, legHeight, legThickness);
+  const steelLegMat = new THREE.MeshStandardMaterial({
+    color: 0x1a1e24, // Dark anthracite satin steel
+    roughness: 0.35,
+    metalness: 0.75,
   });
+
+  const chromeMat = new THREE.MeshStandardMaterial({
+    color: 0xd8dde4, // Machined stainless / chrome
+    roughness: 0.22,
+    metalness: 0.90,
+  });
+
+  const rubberFootMat = new THREE.MeshBasicMaterial({ color: 0x111111 });
 
   const legOffsetX = TABLE_WIDTH / 2 - 0.12;
-  const legOffsetZ = TABLE_LENGTH / 2 - 0.22;
-  const legY = (TABLE_HEIGHT - TABLE_THICKNESS) / 2;
+  const legOffsetZ = TABLE_LENGTH / 2 - 0.24;
+  const legY = legHeight / 2;
 
-  const legPositions = [
-    [-legOffsetX, legY, -legOffsetZ],
-    [legOffsetX, legY, -legOffsetZ],
-    [-legOffsetX, legY, legOffsetZ],
-    [legOffsetX, legY, legOffsetZ],
-    [-legOffsetX * 0.85, legY, 0],
-    [legOffsetX * 0.85, legY, 0],
+  // 6 Tournament legs: 4 outer corner legs + 2 center legs at net line
+  const legConfigs = [
+    { x: -legOffsetX, z: -legOffsetZ }, // South West
+    { x: legOffsetX, z: -legOffsetZ },  // South East
+    { x: -legOffsetX, z: legOffsetZ },  // North West
+    { x: legOffsetX, z: legOffsetZ },   // North East
+    { x: -legOffsetX * 0.92, z: 0 },    // Center West (Net line)
+    { x: legOffsetX * 0.92, z: 0 },     // Center East (Net line)
   ];
 
-  legPositions.forEach((pos) => {
-    const leg = new THREE.Mesh(legGeo, legMaterial);
-    leg.position.set(pos[0], pos[1], pos[2]);
+  const levelerCupGeo = new THREE.CylinderGeometry(0.034, 0.040, 0.020, 20);
+  const levelerRubberGeo = new THREE.CylinderGeometry(0.042, 0.044, 0.008, 20);
+  const collarGeo = new THREE.BoxGeometry(0.062, 0.016, 0.062);
+
+  legConfigs.forEach((cfg) => {
+    // Main tubular steel leg
+    const leg = new THREE.Mesh(legGeo, steelLegMat);
+    leg.position.set(cfg.x, legY, cfg.z);
     leg.castShadow = true;
+    leg.receiveShadow = true;
     tableGroup.add(leg);
 
-    // Solid brass/gold leveling foot pad
-    const footGeo = new THREE.CylinderGeometry(0.032, 0.038, 0.018, 16);
-    const foot = new THREE.Mesh(footGeo, goldTrimMat);
-    foot.position.set(pos[0], 0.009, pos[2]);
-    tableGroup.add(foot);
-
-    // Solid brass/gold collar ring at the top of the leg
-    const collarGeo = new THREE.BoxGeometry(0.052, 0.012, 0.052);
-    const collar = new THREE.Mesh(collarGeo, goldTrimMat);
-    collar.position.set(pos[0], TABLE_HEIGHT - TABLE_THICKNESS - 0.006, pos[2]);
+    // Chrome collar flange bracket connecting leg to the under-apron
+    const collar = new THREE.Mesh(collarGeo, chromeMat);
+    collar.position.set(cfg.x, TABLE_HEIGHT - TABLE_THICKNESS - 0.008, cfg.z);
     tableGroup.add(collar);
+
+    // Machined chrome leveling foot cup
+    const footCup = new THREE.Mesh(levelerCupGeo, chromeMat);
+    footCup.position.set(cfg.x, 0.014, cfg.z);
+    footCup.castShadow = true;
+    tableGroup.add(footCup);
+
+    // Non-slip vulcanized rubber floor pad
+    const rubberPad = new THREE.Mesh(levelerRubberGeo, rubberFootMat);
+    rubberPad.position.set(cfg.x, 0.004, cfg.z);
+    tableGroup.add(rubberPad);
   });
 
-  // Cross-bracing rods with gold coupling bolts
-  const crossBraceGeo = new THREE.CylinderGeometry(0.012, 0.012, TABLE_WIDTH - 0.24, 12);
-  const brace1 = new THREE.Mesh(crossBraceGeo, legMaterial);
-  brace1.rotation.z = Math.PI / 2;
-  brace1.position.set(0, 0.25, -legOffsetZ);
-  tableGroup.add(brace1);
+  // Sturdy cross-bracing linkage bars connecting left & right leg pairs
+  const crossBraceGeo = new THREE.CylinderGeometry(0.013, 0.013, TABLE_WIDTH - 0.22, 16);
+  const bracePositionsZ = [-legOffsetZ, 0, legOffsetZ];
+  bracePositionsZ.forEach((bz) => {
+    const brace = new THREE.Mesh(crossBraceGeo, steelLegMat);
+    brace.rotation.z = Math.PI / 2;
+    brace.position.set(0, 0.22, bz);
+    tableGroup.add(brace);
 
-  const brace2 = new THREE.Mesh(crossBraceGeo, legMaterial);
-  brace2.rotation.z = Math.PI / 2;
-  brace2.position.set(0, 0.25, legOffsetZ);
-  tableGroup.add(brace2);
+    // Chrome coupling rings on brace ends
+    for (let side of [-1, 1]) {
+      const ringGeo = new THREE.CylinderGeometry(0.018, 0.018, 0.022, 16);
+      const ring = new THREE.Mesh(ringGeo, chromeMat);
+      ring.rotation.z = Math.PI / 2;
+      ring.position.set(side * (legOffsetX - 0.025), 0.22, bz);
+      tableGroup.add(ring);
+    }
+  });
 
-  // 5. REGULATION NET ASSEMBLY
+  // Diagonal structural linkage struts connecting legs to center undercarriage
+  const strutLength = Math.hypot(legOffsetX * 0.4, 0.35, legOffsetZ * 0.55);
+  const strutGeo = new THREE.CylinderGeometry(0.010, 0.010, strutLength, 12);
+  for (let sx of [-1, 1]) {
+    for (let sz of [-1, 1]) {
+      const strut = new THREE.Mesh(strutGeo, steelLegMat);
+      strut.position.set(sx * (legOffsetX * 0.65), 0.38, sz * (legOffsetZ * 0.55));
+      strut.quaternion.setFromUnitVectors(
+        new THREE.Vector3(0, 1, 0),
+        new THREE.Vector3(-sx * 0.35, 0.65, -sz * 0.65).normalize()
+      );
+      tableGroup.add(strut);
+    }
+  }
+
+  // 5. REGULATION TOURNAMENT NET ASSEMBLY
   const totalNetWidth = TABLE_WIDTH + NET_OVERHANG * 2;
   const netGeo = new THREE.PlaneGeometry(totalNetWidth, NET_HEIGHT);
   const netTex = createNetTexture();
@@ -394,7 +358,7 @@ export function createTableTennisTable() {
     transparent: true,
     opacity: 0.88,
     side: THREE.DoubleSide,
-    roughness: 0.85,
+    roughness: 0.90,
   });
 
   const netMesh = new THREE.Mesh(netGeo, netMat);
@@ -402,29 +366,28 @@ export function createTableTennisTable() {
   netMesh.castShadow = true;
   tableGroup.add(netMesh);
 
-  // Metallic amber gold top tape
+  // Crisp White Top Tape Band
   const netTopTapeGeo = new THREE.BoxGeometry(totalNetWidth, 0.015, 0.006);
   const netTopTapeMat = new THREE.MeshStandardMaterial({
-    color: 0xd4a03c,
-    roughness: 0.32,
-    metalness: 0.55,
+    color: 0xfafafa,
+    roughness: 0.30,
   });
   const netTopTape = new THREE.Mesh(netTopTapeGeo, netTopTapeMat);
   netTopTape.position.set(0, TABLE_HEIGHT + NET_HEIGHT - 0.0075, 0);
   tableGroup.add(netTopTape);
 
-  // Bottom tape
+  // White Bottom Tape Band
   const netBottomTapeGeo = new THREE.BoxGeometry(totalNetWidth, 0.008, 0.006);
   const netBottomTape = new THREE.Mesh(netBottomTapeGeo, netTopTapeMat);
   netBottomTape.position.set(0, TABLE_HEIGHT + 0.004, 0);
   tableGroup.add(netBottomTape);
 
-  // Solid brass/gold net posts and clamp fixtures
+  // Tournament Steel Net Posts & Clamp Fixtures
   const postGeo = new THREE.CylinderGeometry(0.015, 0.015, NET_HEIGHT + 0.06, 16);
   const postMat = new THREE.MeshStandardMaterial({
-    color: 0xd4a03c,
-    roughness: 0.25,
-    metalness: 0.85,
+    color: 0x333842,
+    roughness: 0.30,
+    metalness: 0.80,
   });
 
   const leftPost = new THREE.Mesh(postGeo, postMat);
@@ -437,26 +400,32 @@ export function createTableTennisTable() {
   rightPost.castShadow = true;
   tableGroup.add(rightPost);
 
-  // Post tension adjustment dials
-  const dialGeo = new THREE.CylinderGeometry(0.018, 0.018, 0.012, 16);
-  const leftDial = new THREE.Mesh(dialGeo, postMat);
-  leftDial.position.set(-totalNetWidth / 2, TABLE_HEIGHT + NET_HEIGHT + 0.02, 0);
-  tableGroup.add(leftDial);
+  // Net Post Table Clamps
+  for (let side of [-1, 1]) {
+    const clampGeo = new THREE.BoxGeometry(0.038, 0.055, 0.045);
+    const clamp = new THREE.Mesh(clampGeo, postMat);
+    clamp.position.set(side * (totalNetWidth / 2), TABLE_HEIGHT - 0.012, 0);
+    tableGroup.add(clamp);
 
-  const rightDial = new THREE.Mesh(dialGeo, postMat);
-  rightDial.position.set(totalNetWidth / 2, TABLE_HEIGHT + NET_HEIGHT + 0.02, 0);
-  tableGroup.add(rightDial);
+    // Tension Adjustment Dial
+    const dialGeo = new THREE.CylinderGeometry(0.018, 0.018, 0.012, 16);
+    const dial = new THREE.Mesh(dialGeo, chromeMat);
+    dial.position.set(side * (totalNetWidth / 2), TABLE_HEIGHT + NET_HEIGHT + 0.02, 0);
+    tableGroup.add(dial);
+  }
 
   return tableGroup;
 }
 
 /**
- * Creates a procedural 3D Table Tennis Paddle tailored to the dark luxury theme.
- * P1 (Local): Matte obsidian black forehand, deep luxury royal burgundy backhand, metallic gold edge tape,
- * ebony handle with dual gold racing stripes.
- * P2 (Opponent): Matte obsidian black forehand, smoked slate backhand, platinum edge tape,
- * carbon composite handle with platinum inlay.
- * Preserves children[0].castShadow = false for performance optimization assertions.
+ * Creates a procedural 3D Table Tennis Paddle.
+ * Restores the classic, authentic competition racket design:
+ * - Natural 5-ply wood blade
+ * - Iconic competition red rubber forehand
+ * - Classic competition black rubber backhand
+ * - Protective edge tape
+ * - Flared ergonomic wooden handle with mahogany inlay grip stripe
+ * - children[0].castShadow = false for 60fps performance pipeline
  */
 export function createPaddle(primaryColor = 'red') {
   const paddleGroup = new THREE.Group();
@@ -466,12 +435,12 @@ export function createPaddle(primaryColor = 'red') {
   const bladeThickness = 0.008;
   const rubberThickness = 0.0025;
 
-  // Blade core: layered dark walnut / ebony ply
+  // 1. Blade Core: Laminated natural birch / 5-ply wood
   const bladeGeo = new THREE.CylinderGeometry(bladeRadius, bladeRadius, bladeThickness, 36);
   const woodMat = new THREE.MeshStandardMaterial({
-    color: primaryColor === 'red' ? 0x2e251e : 0x222220,
-    roughness: 0.55,
-    metalness: 0.08,
+    color: 0xd9b382,
+    roughness: 0.60,
+    metalness: 0.05,
   });
   const blade = new THREE.Mesh(bladeGeo, woodMat);
   blade.rotation.x = Math.PI / 2;
@@ -479,12 +448,24 @@ export function createPaddle(primaryColor = 'red') {
   blade.castShadow = false; // Strictly false for dynamic mesh optimization
   paddleGroup.add(blade);
 
-  // Forehand rubber: Matte obsidian black
+  // 2. Forehand Rubber Face: Iconic Competition Red
   const rubberGeo = new THREE.CylinderGeometry(bladeRadius - 0.001, bladeRadius - 0.001, rubberThickness, 36);
+  const redRubberMat = new THREE.MeshStandardMaterial({
+    color: 0xd91616,
+    roughness: 0.32,
+    metalness: 0.05,
+  });
+  const redFace = new THREE.Mesh(rubberGeo, redRubberMat);
+  redFace.rotation.x = Math.PI / 2;
+  redFace.position.set(0, bladeRadius, -bladeThickness / 2 - rubberThickness / 2);
+  redFace.castShadow = false;
+  paddleGroup.add(redFace);
+
+  // 3. Backhand Rubber Face: Classic Competition Black
   const blackRubberMat = new THREE.MeshStandardMaterial({
-    color: 0x11100e,
-    roughness: 0.36,
-    metalness: 0.04,
+    color: 0x141414,
+    roughness: 0.35,
+    metalness: 0.05,
   });
   const blackFace = new THREE.Mesh(rubberGeo, blackRubberMat);
   blackFace.rotation.x = Math.PI / 2;
@@ -492,33 +473,19 @@ export function createPaddle(primaryColor = 'red') {
   blackFace.castShadow = false;
   paddleGroup.add(blackFace);
 
-  // Backhand rubber: P1 Luxury Royal Burgundy, P2 Smoked Slate
-  const backRubberColor = primaryColor === 'red' ? 0x5c1318 : 0x25272a;
-  const backRubberMat = new THREE.MeshStandardMaterial({
-    color: backRubberColor,
-    roughness: 0.34,
-    metalness: 0.05,
-  });
-  const backFace = new THREE.Mesh(rubberGeo, backRubberMat);
-  backFace.rotation.x = Math.PI / 2;
-  backFace.position.set(0, bladeRadius, -bladeThickness / 2 - rubberThickness / 2);
-  backFace.castShadow = false;
-  paddleGroup.add(backFace);
-
-  // Edge tape: P1 Metallic Amber Gold (0xd4a03c), P2 Refined Platinum (0xc8c3b8)
-  const edgeColor = primaryColor === 'red' ? 0xd4a03c : 0xc8c3b8;
+  // 4. Protective Edge Tape
   const edgeGeo = new THREE.TorusGeometry(bladeRadius, (bladeThickness + rubberThickness * 2) / 2, 8, 36);
   const edgeMat = new THREE.MeshStandardMaterial({
-    color: edgeColor,
-    roughness: 0.32,
-    metalness: 0.8,
+    color: primaryColor === 'red' ? 0x0044ff : 0xd4af37,
+    roughness: 0.40,
+    metalness: 0.20,
   });
   const edge = new THREE.Mesh(edgeGeo, edgeMat);
   edge.position.set(0, bladeRadius, 0);
   edge.castShadow = false;
   paddleGroup.add(edge);
 
-  // Handle assembly
+  // 5. Flared Ergonomic Wooden Handle
   const handleLength = 0.105;
   const handleWidth = 0.028;
   const handleThickness = 0.022;
@@ -526,22 +493,20 @@ export function createPaddle(primaryColor = 'red') {
   const handleGroup = new THREE.Group();
 
   const handleGeo = new THREE.BoxGeometry(handleWidth, handleLength, handleThickness);
-  const handleMat = new THREE.MeshStandardMaterial({
-    color: primaryColor === 'red' ? 0x1c1a17 : 0x161618,
-    roughness: 0.45,
-    metalness: 0.2,
+  const handleWoodMat = new THREE.MeshStandardMaterial({
+    color: 0xc89968,
+    roughness: 0.50,
   });
-  const handle = new THREE.Mesh(handleGeo, handleMat);
+  const handle = new THREE.Mesh(handleGeo, handleWoodMat);
   handle.position.y = -handleLength / 2 + 0.01;
   handle.castShadow = false;
   handleGroup.add(handle);
 
-  // Handle inlaid racing stripes
-  const stripeGeo = new THREE.BoxGeometry(0.005, handleLength - 0.01, handleThickness + 0.002);
+  // Contrasting Mahogany / Walnut Inlay Grip Stripe
+  const stripeGeo = new THREE.BoxGeometry(0.006, handleLength - 0.01, handleThickness + 0.002);
   const stripeMat = new THREE.MeshStandardMaterial({
-    color: edgeColor,
-    roughness: 0.35,
-    metalness: 0.75,
+    color: 0x3d2314,
+    roughness: 0.50,
   });
   const stripe = new THREE.Mesh(stripeGeo, stripeMat);
   stripe.position.y = -handleLength / 2 + 0.01;

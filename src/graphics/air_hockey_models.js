@@ -952,28 +952,38 @@ export function createAirHockeyTable() {
     tableGroup.add(bolt);
   });
 
-  // 7. 4 ANGLED STRUCTURAL STEEL LEGS & LEVELER FEET
+  // 7. 4 HEAVY-DUTY COMMERCIAL TOURNAMENT LEGS & CHROME LEVELERS
   const legOffsetX = W / 2 - 0.08;
   const legOffsetZ = L / 2 - 0.22;
   const legHeight = H - apronHeight;
-  const legGeo = new THREE.BoxGeometry(0.065, legHeight, 0.065);
+  const legGeo = new THREE.BoxGeometry(0.078, legHeight, 0.078);
   const steelLegMat = new THREE.MeshStandardMaterial({
-    color: 0x1f232b,
+    color: 0x1a1e26, // Dark metallic titanium anthracite
     metalness: 0.85,
-    roughness: 0.32,
+    roughness: 0.28,
   });
 
-  const levelerFootGeo = new THREE.CylinderGeometry(0.052, 0.058, 0.024, 24);
+  const chromeStemGeo = new THREE.CylinderGeometry(0.018, 0.018, 0.040, 16);
+  const levelerFootGeo = new THREE.CylinderGeometry(0.060, 0.068, 0.024, 24);
+  const rubberPadGeo = new THREE.CylinderGeometry(0.066, 0.068, 0.008, 24);
   const rubberPadMat = new THREE.MeshBasicMaterial({ color: 0x111111 });
+  const mountFlangeGeo = new THREE.BoxGeometry(0.105, 0.022, 0.105);
 
   const legConfigs = [
-    { x: -legOffsetX, z: -legOffsetZ, rotX: -0.08, rotZ: -0.08 },
-    { x: legOffsetX, z: -legOffsetZ, rotX: -0.08, rotZ: 0.08 },
-    { x: -legOffsetX, z: legOffsetZ, rotX: 0.08, rotZ: -0.08 },
-    { x: legOffsetX, z: legOffsetZ, rotX: 0.08, rotZ: 0.08 },
+    { x: -legOffsetX, z: -legOffsetZ, rotX: -0.07, rotZ: -0.07 },
+    { x: legOffsetX, z: -legOffsetZ, rotX: -0.07, rotZ: 0.07 },
+    { x: -legOffsetX, z: legOffsetZ, rotX: 0.07, rotZ: -0.07 },
+    { x: legOffsetX, z: legOffsetZ, rotX: 0.07, rotZ: 0.07 },
   ];
 
   legConfigs.forEach((cfg) => {
+    // Upper mounting flange where leg anchors into cabinet skirt
+    const flange = new THREE.Mesh(mountFlangeGeo, chromePostMat);
+    flange.position.set(cfg.x, H - apronHeight - 0.011, cfg.z);
+    flange.castShadow = true;
+    tableGroup.add(flange);
+
+    // Main structural leg column
     const legMesh = new THREE.Mesh(legGeo, steelLegMat);
     legMesh.position.set(cfg.x, legHeight / 2, cfg.z);
     legMesh.rotation.x = cfg.rotX;
@@ -982,20 +992,25 @@ export function createAirHockeyTable() {
     legMesh.receiveShadow = true;
     tableGroup.add(legMesh);
 
-    // Chrome leveler foot at base of leg
+    // Threaded chrome screw stem
+    const stem = new THREE.Mesh(chromeStemGeo, chromePostMat);
+    stem.position.set(cfg.x * 1.07, 0.030, cfg.z * 1.07);
+    tableGroup.add(stem);
+
+    // Heavy-duty chrome leveler foot cup
     const levelerFoot = new THREE.Mesh(levelerFootGeo, chromePostMat);
-    levelerFoot.position.set(cfg.x * 1.08, 0.014, cfg.z * 1.08);
+    levelerFoot.position.set(cfg.x * 1.07, 0.014, cfg.z * 1.07);
     levelerFoot.castShadow = true;
     tableGroup.add(levelerFoot);
 
-    const rubberPad = new THREE.Mesh(levelerFootGeo, rubberPadMat);
-    rubberPad.scale.set(0.95, 0.3, 0.95);
-    rubberPad.position.set(cfg.x * 1.08, 0.003, cfg.z * 1.08);
+    // Non-marking vulcanized rubber base pad
+    const rubberPad = new THREE.Mesh(rubberPadGeo, rubberPadMat);
+    rubberPad.position.set(cfg.x * 1.07, 0.004, cfg.z * 1.07);
     tableGroup.add(rubberPad);
   });
 
-  // Structural Steel Cross-Braces between legs
-  const crossBraceGeo = new THREE.CylinderGeometry(0.014, 0.014, W - 0.16, 16);
+  // Structural Steel Cross-Braces between left and right legs
+  const crossBraceGeo = new THREE.CylinderGeometry(0.018, 0.018, W - 0.14, 16);
   const braceSouth = new THREE.Mesh(crossBraceGeo, steelLegMat);
   braceSouth.rotation.z = Math.PI / 2;
   braceSouth.position.set(0, 0.22, -legOffsetZ);
@@ -1005,6 +1020,22 @@ export function createAirHockeyTable() {
   braceNorth.rotation.z = Math.PI / 2;
   braceNorth.position.set(0, 0.22, legOffsetZ);
   tableGroup.add(braceNorth);
+
+  // Chrome gusset plates on cross-brace centers
+  const centerGussetGeo = new THREE.BoxGeometry(0.075, 0.055, 0.045);
+  for (let bz of [-legOffsetZ, legOffsetZ]) {
+    const gusset = new THREE.Mesh(centerGussetGeo, chromePostMat);
+    gusset.position.set(0, 0.22, bz);
+    tableGroup.add(gusset);
+  }
+
+  // Longitudinal lower structural stretcher beam connecting South and North crossbars
+  const stretcherLength = L - 0.44;
+  const stretcherGeo = new THREE.BoxGeometry(0.038, 0.038, stretcherLength);
+  const stretcher = new THREE.Mesh(stretcherGeo, steelLegMat);
+  stretcher.position.set(0, 0.22, 0);
+  stretcher.castShadow = true;
+  tableGroup.add(stretcher);
 
   // 8. ILLUMINATED LED SIDE RAIL ACCENTS (Dual-zone glowing light channels)
   const ledStripLength = L - 0.14; // 2.0m along sides
