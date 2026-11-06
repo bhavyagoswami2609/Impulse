@@ -487,11 +487,11 @@ export class TableTennisScene {
           );
         }
 
-        // Apply Head Yaw Rotation around vertical axis
+        // Apply Head Yaw Rotation around vertical axis (unmirrored: looking right turns view right)
         if (Math.abs(this.smoothedHeadYaw) > 0.0001) {
           const upAxis = view.up ? view.up.clone() : new THREE.Vector3(0, 1, 0);
           const baseDir = view.target.clone().sub(this.camera.position);
-          const rotatedDir = baseDir.applyAxisAngle(upAxis, -this.smoothedHeadYaw);
+          const rotatedDir = baseDir.applyAxisAngle(upAxis, this.smoothedHeadYaw);
           const effectiveTarget = this.camera.position.clone().add(rotatedDir);
           this.camera.lookAt(effectiveTarget);
         } else {

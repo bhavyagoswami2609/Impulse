@@ -192,6 +192,15 @@ class TableTennisApp {
       this.stateController.updateTrackingStatus(isTracked);
       this.stateController.updateCameraUI(isTracked);
     }
+    if (isTracked) {
+      if (this.faceTracker && !this.faceTracker.isTracking) {
+        this.faceTracker.startTracking();
+      }
+    } else {
+      if (this.faceTracker && this.faceTracker.isTracking) {
+        this.faceTracker.stopTracking();
+      }
+    }
   }
 
   onCalibrationUpdate(data) {
@@ -359,6 +368,9 @@ class TableTennisApp {
       if (isHandActive && this.tracker.latestLandmarks) {
         this.tracker.drawHandSkeleton(ctx, this.tracker.latestLandmarks, w, h, this.tracker.isSpidermanActive);
       }
+      if (this.faceTracker && this.faceTracker.isTracking) {
+        this.faceTracker.drawPIPOverlay(ctx, w, h);
+      }
     }
   }
 
@@ -386,6 +398,11 @@ class TableTennisApp {
     if (appState === APP_STATES.CALIBRATING) {
       if (this.stateController) {
         this.stateController.updateCalibrationProgress(deltaTime);
+      }
+      if (this.faceTracker && this.faceTracker.enabled) {
+        const headOffset = this.faceTracker.getParallaxOffset(deltaTime);
+        const headYaw = this.faceTracker.getYaw(deltaTime);
+        this.scene.setHeadParallaxOffset(headOffset, headYaw);
       }
       this.scene.update(deltaTime);
       this.scene.render();

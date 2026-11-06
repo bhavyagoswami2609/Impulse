@@ -503,6 +503,9 @@ export class StateController {
         if (this.calibStatusText) {
           this.calibStatusText.textContent = 'Show calibration sign (🤟) in frame';
         }
+        if (this.app && this.app.faceTracker && !this.app.faceTracker.isTracking) {
+          this.app.faceTracker.startTracking();
+        }
         this.showToast('Camera Connected');
       } else {
         const errorMsg = tracker.lastError?.message || 'Camera blocked or unavailable.';
@@ -871,6 +874,11 @@ export class StateController {
     if (this.app && this.app.scene) {
       this.app.scene.setOrbit(false);
       this.app.scene.setViewMode(this.app.currentCameraView || 'host');
+    }
+
+    // Ensure Face Tracker is active for 3D holographic head tracking in both disciplines
+    if (this.app && this.app.faceTracker && this.app.tracker?.isTracking && !this.app.faceTracker.isTracking) {
+      this.app.faceTracker.startTracking();
     }
 
     // Reset scores & rally for active discipline

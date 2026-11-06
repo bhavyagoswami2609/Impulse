@@ -102,7 +102,7 @@ export class FaceTracker {
 
     // Mouse fallback parallax when webcam is off
     this.mouseNormalized = { x: 0, y: 0 };
-    this.useMouseFallback = false;
+    this.useMouseFallback = true;
     this.bindMouseFallback();
   }
 
@@ -313,8 +313,12 @@ export class FaceTracker {
       this.lastDetectedTime = now;
       this.useMouseFallback = false;
 
-      // Horizontal head position (unmirrored by default so moving head left shifts perspective left)
-      const rawX = this.invertX ? (1.0 - box.xCenter) : box.xCenter;
+      // Horizontal head position:
+      // In webcam mirror/selfie video feed, when user physically moves head LEFT,
+      // face moves to the RIGHT in the video frame (box.xCenter increases towards 1.0).
+      // For unmirrored natural perspective, head moving LEFT must move camera LEFT (-X in Three.js).
+      // Therefore, rawX = 1.0 - box.xCenter ensures camera moves with the head and is NOT mirrored.
+      const rawX = this.invertX ? box.xCenter : (1.0 - box.xCenter);
       // In camera feed, Y=0 is top, Y=1 is bottom; moving head UP should be positive
       const rawY = 1.0 - box.yCenter;
       // Box width / eye distance represents depth (closer = larger box)
@@ -435,7 +439,7 @@ export class FaceTracker {
     this.filterYaw = new OneEuroFilter(1.2, 0.05, 1.0);
 
     if (this.latestFaceBox) {
-      const rawX = this.invertX ? (1.0 - this.latestFaceBox.xCenter) : this.latestFaceBox.xCenter;
+      const rawX = this.invertX ? this.latestFaceBox.xCenter : (1.0 - this.latestFaceBox.xCenter);
       const rawY = 1.0 - this.latestFaceBox.yCenter;
       const rawSize = this.latestFaceBox.width;
 
@@ -503,8 +507,8 @@ export class FaceTracker {
     }
 
     if (this.useMouseFallback && (!this.isTracking || !this.faceDetected)) {
-      // Mouse fallback: moving mouse right rotates view right (positive yaw)
-      const mouseFactor = this.invertX ? -0.32 : 0.32;
+      // Mouse fallback: moving mouse right rotates view right (+yaw), left rotates left (-yaw)
+      const mouseFactor = this.invertX ? -0.22 : 0.22;
       this.targetYaw = THREE.MathUtils.clamp(this.mouseNormalized.x * mouseFactor, -this.maxYaw, this.maxYaw);
     }
 
@@ -529,10 +533,11 @@ export class FaceTracker {
     }
 
     if (this.useMouseFallback && (!this.isTracking || !this.faceDetected)) {
-      // Subtle mouse fallback preview when webcam is not tracking (unmirrored to match head tracking)
-      const mouseFactor = this.invertX ? 0.28 : -0.28;
+      // Subtle mouse fallback preview when webcam is not tracking (unmirrored natural perspective)
+      // Moving mouse right shifts camera right (+X), left shifts camera left (-X)
+      const mouseFactor = this.invertX ? -0.22 : 0.22;
       const mouseX = THREE.MathUtils.clamp(this.mouseNormalized.x * mouseFactor, -this.maxOffsetX, this.maxOffsetX);
-      const mouseY = THREE.MathUtils.clamp(this.mouseNormalized.y * 0.16, -this.maxOffsetY, this.maxOffsetY);
+      const mouseY = THREE.MathUtils.clamp(this.mouseNormalized.y * 0.14, -this.maxOffsetY, this.maxOffsetY);
       this.targetOffset.set(mouseX, mouseY, 0);
     }
 

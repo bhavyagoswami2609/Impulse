@@ -62,25 +62,25 @@ console.log('\n--- Test 2: Face Detection Parallax Calculation & Clamping ---');
   assert(Math.abs(offset.x) < 0.05, `Offset at neutral should be near 0, got ${offset.x}`);
   console.log(`✓ Neutral center calibrated: offset = (${offset.x.toFixed(3)}, ${offset.y.toFixed(3)}, ${offset.z.toFixed(3)})`);
 
-  // Move head to the LEFT (in camera feed, xCenter moves towards 1 -> rawX = 0.70)
+  // Move head to the LEFT (in camera feed, xCenter moves towards 1 -> rawX = 1 - 0.70 = 0.30)
   for (let i = 0; i < 30; i++) {
     offset = step(
       { xCenter: 0.70, yCenter: 0.50, width: 0.22, height: 0.28 },
       [{ x: 0.65, y: 0.45 }, { x: 0.75, y: 0.45 }, { x: 0.70, y: 0.52 }]
     );
   }
-  assert(offset.x > 0.15, `Moving head left must produce positive X parallax offset in unmirrored mode (got ${offset.x})`);
-  console.log(`✓ Moving head LEFT: camera perspective shifts left by +${offset.x.toFixed(3)} m`);
+  assert(offset.x < -0.15, `Moving head left must produce negative X parallax offset in unmirrored mode (got ${offset.x})`);
+  console.log(`✓ Moving head LEFT: camera perspective shifts left by ${offset.x.toFixed(3)} m`);
 
-  // Move head to the RIGHT (in camera feed, xCenter moves towards 0 -> rawX = 0.30)
+  // Move head to the RIGHT (in camera feed, xCenter moves towards 0 -> rawX = 1 - 0.30 = 0.70)
   for (let i = 0; i < 40; i++) {
     offset = step(
       { xCenter: 0.30, yCenter: 0.50, width: 0.22, height: 0.28 },
       [{ x: 0.25, y: 0.45 }, { x: 0.35, y: 0.45 }, { x: 0.30, y: 0.52 }]
     );
   }
-  assert(offset.x < -0.15, `Moving head right must produce negative X parallax offset in unmirrored mode (got ${offset.x})`);
-  console.log(`✓ Moving head RIGHT: camera perspective shifts right by ${offset.x.toFixed(3)} m`);
+  assert(offset.x > 0.15, `Moving head right must produce positive X parallax offset in unmirrored mode (got ${offset.x})`);
+  console.log(`✓ Moving head RIGHT: camera perspective shifts right by +${offset.x.toFixed(3)} m`);
 
   // Move head UP (in camera feed, yCenter moves towards 0 -> rawY = 1 - yCenter = 0.75)
   for (let i = 0; i < 40; i++) {
@@ -316,14 +316,14 @@ console.log('\n--- Test 5: Head Yaw Rotation (Looking Left vs. Right around Y-ax
   assert(yaw > 0.12, `Looking to the RIGHT must produce positive Yaw in unmirrored mode (got ${yaw})`);
   console.log(`✓ Looking to the RIGHT: detected positive yaw +${(THREE.MathUtils.radToDeg(yaw)).toFixed(2)}° (+${yaw.toFixed(3)} rad) without moving head position`);
 
-  // Verify camera rotation when looking RIGHT (Host View: camera pans to screen right, target shifts to -X)
+  // Verify camera rotation when looking RIGHT (Host View: camera pans to screen right, target shifts to +X)
   const hostCamPos = new THREE.Vector3(0, 1.48, -2.55);
   const hostBaseTarget = new THREE.Vector3(0, 0.82, 0.20);
   const baseDir = hostBaseTarget.clone().sub(hostCamPos);
-  const rotatedDirRight = baseDir.clone().applyAxisAngle(new THREE.Vector3(0, 1, 0), -yaw);
+  const rotatedDirRight = baseDir.clone().applyAxisAngle(new THREE.Vector3(0, 1, 0), yaw);
   const effectiveTargetRight = hostCamPos.clone().add(rotatedDirRight);
-  assert(effectiveTargetRight.x < -0.10, `Camera target must shift towards screen right (-X), got ${effectiveTargetRight.x}`);
-  console.log(`✓ Camera view cleanly turns to the RIGHT: target.x = ${effectiveTargetRight.x.toFixed(3)} (Screen Right)`);
+  assert(effectiveTargetRight.x > 0.10, `Camera target must shift towards screen right (+X), got ${effectiveTargetRight.x}`);
+  console.log(`✓ Camera view cleanly turns to the RIGHT: target.x = +${effectiveTargetRight.x.toFixed(3)} (Screen Right)`);
 
   // User looks to their LEFT: head position DOES NOT move (xCenter stays 0.50),
   // nose turns towards left eye (nose.x moves from 0.50 to 0.535)
@@ -341,11 +341,11 @@ console.log('\n--- Test 5: Head Yaw Rotation (Looking Left vs. Right around Y-ax
   assert(yaw < -0.12, `Looking to the LEFT must produce negative Yaw in unmirrored mode (got ${yaw})`);
   console.log(`✓ Looking to the LEFT: detected negative yaw ${(THREE.MathUtils.radToDeg(yaw)).toFixed(2)}° (${yaw.toFixed(3)} rad) without moving head position`);
 
-  // Verify camera rotation when looking LEFT (Host View: camera pans to screen left, target shifts to +X)
-  const rotatedDirLeft = baseDir.clone().applyAxisAngle(new THREE.Vector3(0, 1, 0), -yaw);
+  // Verify camera rotation when looking LEFT (Host View: camera pans to screen left, target shifts to -X)
+  const rotatedDirLeft = baseDir.clone().applyAxisAngle(new THREE.Vector3(0, 1, 0), yaw);
   const effectiveTargetLeft = hostCamPos.clone().add(rotatedDirLeft);
-  assert(effectiveTargetLeft.x > 0.10, `Camera target must shift towards screen left (+X), got ${effectiveTargetLeft.x}`);
-  console.log(`✓ Camera view cleanly turns to the LEFT: target.x = +${effectiveTargetLeft.x.toFixed(3)} (Screen Left)`);
+  assert(effectiveTargetLeft.x < -0.10, `Camera target must shift towards screen left (-X), got ${effectiveTargetLeft.x}`);
+  console.log(`✓ Camera view cleanly turns to the LEFT: target.x = ${effectiveTargetLeft.x.toFixed(3)} (Screen Left)`);
 
   // Verify disable zeroes yaw smoothly
   tracker.disable();
