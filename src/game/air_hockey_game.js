@@ -401,13 +401,15 @@ export class AirHockeyGame {
       }
 
       // 2. Update Player 2 Striker (Multiplayer client or CPU AI)
-      if (this.multiplayer.isConnected && (this.hasRemoteInput || this.clientP2Input)) {
-        this.p2PrevPos.copy(this.p2Pos);
-        // Apply linear interpolation to remote opponent striker across network ticks
-        const lerpFactor = Math.min(1.0, 25.0 * dt);
-        this.p2Pos.lerp(this.remoteTargetPos, lerpFactor);
-        if (dt > 0.0001) {
-          this.p2Vel.subVectors(this.p2Pos, this.p2PrevPos).divideScalar(dt);
+      if (this.multiplayer.isConnected) {
+        if (this.hasRemoteInput || this.clientP2Input) {
+          this.p2PrevPos.copy(this.p2Pos);
+          // Apply linear interpolation to remote opponent striker across network ticks
+          const lerpFactor = Math.min(1.0, 25.0 * dt);
+          this.p2Pos.lerp(this.remoteTargetPos, lerpFactor);
+          if (dt > 0.0001) {
+            this.p2Vel.subVectors(this.p2Pos, this.p2PrevPos).divideScalar(dt);
+          }
         }
       } else {
         this.updateAI(dt);

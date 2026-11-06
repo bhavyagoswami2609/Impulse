@@ -144,16 +144,12 @@
 
           <!-- Online 1v1 Configuration Panel -->
           <div id="online-setup-panel" class="setup-content-block" style="display: none;">
-            <div class="online-split-row">
+            <!-- Split Row: Host vs Join (visible before room is created/joined) -->
+            <div id="online-split-row" class="online-split-row">
               <!-- Create Match Column -->
               <div class="online-col">
                 <span class="subgroup-label">Host Match</span>
                 <button id="btn-create-match" class="halo-btn secondary-btn">Create Match</button>
-                <div id="room-code-display-wrap" class="room-code-wrap" style="display: none;">
-                  <span class="room-code-caption">Room Code</span>
-                  <div id="room-code-val" class="room-code-val">-----</div>
-                  <button id="btn-copy-room-code" class="mini-btn">Copy</button>
-                </div>
               </div>
 
               <div class="online-column-divider">
@@ -169,6 +165,59 @@
                 </div>
               </div>
             </div>
+
+            <!-- Party Lobby Card (Appears once a room is created or joined) -->
+            <div id="party-lobby-card" class="party-lobby-card" style="display: none;">
+              <div class="party-header">
+                <div class="party-room-badge">
+                  <span class="party-room-label">ROOM CODE</span>
+                  <span id="party-room-code-val" class="party-room-code-val">-----</span>
+                  <button id="btn-party-copy-code" class="mini-btn" title="Copy Room Code">Copy</button>
+                </div>
+                <div id="party-status-pill" class="party-status-pill waiting">
+                  <span class="pill-dot"></span>
+                  <span id="party-status-pill-text">Waiting for Player 2...</span>
+                </div>
+                <button id="btn-party-leave" class="party-leave-btn" title="Leave Party / Room">✕</button>
+              </div>
+
+              <!-- 2-Player Party Roster -->
+              <div class="party-roster">
+                <!-- Slot 1: Host -->
+                <div class="party-slot p1" id="party-slot-p1">
+                  <div class="party-slot-avatar p1">P1</div>
+                  <div class="party-slot-info">
+                    <span class="party-slot-name" id="party-p1-name">Host (You)</span>
+                    <span class="party-slot-role" id="party-p1-role">Room Leader</span>
+                  </div>
+                  <div class="party-slot-status ready" id="party-p1-status">
+                    <span class="slot-status-dot"></span>
+                    <span id="party-p1-status-text" class="slot-status-text">Ready</span>
+                  </div>
+                </div>
+
+                <!-- VS Badge -->
+                <div class="party-vs-badge">VS</div>
+
+                <!-- Slot 2: Guest / Opponent -->
+                <div class="party-slot p2" id="party-slot-p2">
+                  <div class="party-slot-avatar p2" id="party-p2-avatar">P2</div>
+                  <div class="party-slot-info">
+                    <span class="party-slot-name" id="party-p2-name">Waiting for opponent...</span>
+                    <span class="party-slot-role" id="party-p2-role">Guest</span>
+                  </div>
+                  <div class="party-slot-status standby" id="party-p2-status">
+                    <span class="slot-status-dot"></span>
+                    <span class="slot-status-text" id="party-p2-status-text">Standby</span>
+                  </div>
+                </div>
+              </div>
+
+              <div id="party-info-banner" class="party-info-banner">
+                Share this 5-letter code with an opponent to load player.
+              </div>
+            </div>
+
             <div id="online-status-hint" class="online-status-hint">
               Direct peer-to-peer data channel
             </div>
@@ -177,7 +226,7 @@
           <!-- Main Launch Action -->
           <div class="setup-action-footer">
             <button id="btn-start-match" class="halo-btn start-match-btn">
-              <span>Start Match</span>
+              <span id="btn-start-match-text">Start Match</span>
               <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
                 <polygon points="5 3 19 12 5 21 5 3" />
               </svg>

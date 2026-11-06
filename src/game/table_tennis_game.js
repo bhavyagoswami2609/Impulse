@@ -788,16 +788,18 @@ export class TableTennisGame {
       }
 
       // Update Player 2 (Remote Multiplayer Client or CPU AI)
-      if (this.multiplayer.isConnected && (this.hasRemoteInput || this.clientP2Input)) {
-        // Apply linear (lerp) & spherical (slerp) interpolation across incoming network ticks
-        const lerpFactor = Math.min(1.0, 25.0 * dt);
-        this.scene.paddle2.position.lerp(this.remoteTargetPos, lerpFactor);
-        this.scene.paddle2.quaternion.slerp(this.remoteTargetRot, lerpFactor);
-        this.physics.updatePaddle2(
-          this.scene.paddle2.position,
-          this.scene.paddle2.quaternion,
-          this.remoteTargetVel
-        );
+      if (this.multiplayer.isConnected) {
+        if (this.hasRemoteInput || this.clientP2Input) {
+          // Apply linear (lerp) & spherical (slerp) interpolation across incoming network ticks
+          const lerpFactor = Math.min(1.0, 25.0 * dt);
+          this.scene.paddle2.position.lerp(this.remoteTargetPos, lerpFactor);
+          this.scene.paddle2.quaternion.slerp(this.remoteTargetRot, lerpFactor);
+          this.physics.updatePaddle2(
+            this.scene.paddle2.position,
+            this.scene.paddle2.quaternion,
+            this.remoteTargetVel
+          );
+        }
       } else {
         this.updateAI(dt);
         this.scene.paddle2.position.copy(this.aiCurrentPos);

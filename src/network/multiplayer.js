@@ -4,14 +4,28 @@ const Peer = peerPkg?.Peer || peerPkg?.default?.Peer || peerPkg;
 /**
  * Standard 32-byte Binary Packet Types (Float32Array with 8 floats)
  * [0]: Packet type
- *   1.0 = Position State
- *   2.0 = Score Update
- *   3.0 = Collision Event
+ *   1.0 = Position State / TT_SYNC
+ *   2.0 = Score Update / TT_CLIENT_INPUT
+ *   3.0 = Collision Event / HOCKEY_SYNC
+ *   4.0 = HOCKEY_CLIENT_INPUT
+ *   9.0 = Control Event (Party handshake, start match, sync)
  */
 export const PACKET_TYPES = {
   POSITION_STATE: 1.0,
   SCORE_UPDATE: 2.0,
   COLLISION_EVENT: 3.0,
+  CONTROL: 9.0,
+};
+
+/**
+ * Control action codes for reliable party & lobby state synchronization
+ */
+export const CONTROL_ACTIONS = {
+  PARTY_JOINED: 1.0,   // Client -> Host: I have joined the party
+  PARTY_ACK: 2.0,      // Host -> Client: Acknowledge & sync party
+  START_MATCH: 3.0,    // Host -> Client: Launch match immediately
+  DISCIPLINE_SYNC: 4.0,// Host -> Client: Sync active discipline (1.0=tennis, 2.0=hockey)
+  LEAVE_PARTY: 5.0,    // Either: Left party
 };
 
 /**
@@ -25,6 +39,22 @@ export const PACKET_TAGS = {
   TT_CLIENT_INPUT: 2.0,
   HOCKEY_SYNC: 3.0,
   HOCKEY_CLIENT_INPUT: 4.0,
+  CONTROL: 9.0,
+};
+
+/**
+ * Optimized STUN Configuration for direct fast WebRTC NAT traversal across devices
+ */
+export const PEER_ICE_CONFIG = {
+  debug: 1,
+  config: {
+    iceServers: [
+      { urls: 'stun:stun.l.google.com:19302' },
+      { urls: 'stun:stun1.l.google.com:19302' },
+      { urls: 'stun:stun2.l.google.com:19302' },
+      { urls: 'stun:stun.cloudflare.com:3478' },
+    ],
+  },
 };
 
 /**
@@ -39,6 +69,9 @@ export class MultiplayerManager {
         onDisconnected: () => {},
         onDataReceived: (packet) => {},
         onStatusChange: (status, message) => {},
+        onPartyReady: (role, peerId, discipline) => {},
+        onRemoteStartMatch: (discipline) => {},
+        onPartyLeft: () => {},
       },
       callbacks
     );
@@ -48,6 +81,7 @@ export class MultiplayerManager {
     this.role = null; // 'host' or 'client'
     this.roomId = null;
     this.isConnected = false;
+    this.isPartyReady = false;
 
     // Pre-allocated 32-byte (8-float) reusable buffers to prevent GC pauses
     this.posPacket = new Float32Array(8);
@@ -134,6 +168,7 @@ export class MultiplayerManager {
   createRoom(roomId) {
     this.roomId = roomId || MultiplayerManager.generateRoomId();
     this.role = 'host';
+    this.isPartyReady = false;
     const peerId = `tt-${this.roomId.toLowerCase()}-host`;
 
     this.callbacks.onStatusChange('connecting', `Creating Room ${this.roomId}...`);
@@ -143,9 +178,7 @@ export class MultiplayerManager {
     }
 
     try {
-      this.peer = new Peer(peerId, {
-        debug: 1,
-      });
+      this.peer = new Peer(peerId, PEER_ICE_CONFIG);
 
       this.peer.on('open', () => {
         this.callbacks.onStatusChange('waiting', `Room ${this.roomId} ready! Waiting for Player 2...`);
@@ -173,11 +206,12 @@ export class MultiplayerManager {
   }
 
   /**
-   * Initialize Client Peer and connect to Host with unordered unreliable DataChannel
+   * Initialize Client Peer and connect to Host with reliable DataChannel
    */
   joinRoom(roomId) {
     this.roomId = roomId.trim().toUpperCase();
     this.role = 'client';
+    this.isPartyReady = false;
     const randomSuffix = Math.random().toString(36).substring(2, 6);
     const clientId = `tt-${this.roomId.toLowerCase()}-client-${randomSuffix}`;
     const hostPeerId = `tt-${this.roomId.toLowerCase()}-host`;
@@ -189,14 +223,12 @@ export class MultiplayerManager {
     }
 
     try {
-      this.peer = new Peer(clientId, {
-        debug: 1,
-      });
+      this.peer = new Peer(clientId, PEER_ICE_CONFIG);
 
       this.peer.on('open', () => {
-        // Connect to host with unordered, unreliable DataChannel and raw binary serialization
+        // Connect to host with reliable DataChannel for zero-drop control signals and raw binary serialization
         this.connection = this.peer.connect(hostPeerId, {
-          reliable: false,
+          reliable: true,
           serialization: 'none',
         });
         this.setupConnectionHandlers();
@@ -221,11 +253,10 @@ export class MultiplayerManager {
       this.callbacks.onStatusChange('connected', `Connected to peer in Room ${this.roomId}!`);
       this.callbacks.onConnected(this.role, this.connection.peer);
 
-      // Initial binary handshake packet using compact Float32Array (no JSON)
-      const handshake = new Float32Array(8);
-      handshake[0] = 1.0; // Position state / handshake
-      handshake[1] = this.role === 'host' ? 1.0 : 2.0;
-      this.send(handshake);
+      // Client immediately informs Host that they have joined and loaded into the party
+      if (this.role === 'client') {
+        this.sendControl(CONTROL_ACTIONS.PARTY_JOINED);
+      }
     });
 
     this.connection.on('data', (data) => {
@@ -248,14 +279,31 @@ export class MultiplayerManager {
 
     this.connection.on('close', () => {
       this.isConnected = false;
+      this.isPartyReady = false;
       this.callbacks.onStatusChange('disconnected', 'Peer disconnected.');
       this.callbacks.onDisconnected();
+      if (this.callbacks.onPartyLeft) {
+        this.callbacks.onPartyLeft();
+      }
     });
 
     this.connection.on('error', (err) => {
       console.warn('DataChannel error:', err);
       this.callbacks.onStatusChange('error', `DataChannel error: ${err}`);
     });
+  }
+
+  /**
+   * Broadcast compact 32-byte binary control packet (e.g. PARTY_JOINED, START_MATCH)
+   */
+  sendControl(action, param1 = 0, param2 = 0) {
+    const packet = new Float32Array(8);
+    packet[0] = PACKET_TYPES.CONTROL;
+    packet[1] = action;
+    packet[2] = param1;
+    packet[3] = param2;
+    packet[4] = (Date.now() % 1000000) / 1000.0;
+    this.send(packet);
   }
 
   /**
@@ -272,7 +320,6 @@ export class MultiplayerManager {
     } else if (ArrayBuffer.isView(payload)) {
       this.connection.send(payload.buffer);
     } else if (typeof payload === 'object') {
-      // Replaced JSON.stringify with compact Float32Array binary packet
       const packet = new Float32Array(8);
       packet[0] = PACKET_TYPES.POSITION_STATE;
       if (payload.scores) {
@@ -286,16 +333,24 @@ export class MultiplayerManager {
   }
 
   disconnect() {
+    if (this.isConnected && this.connection) {
+      try {
+        this.sendControl(CONTROL_ACTIONS.LEAVE_PARTY);
+      } catch (e) {}
+    }
     this.isConnected = false;
+    this.isPartyReady = false;
     if (this.connection) {
       try {
         this.connection.close();
       } catch (e) {}
+      this.connection = null;
     }
     if (this.peer) {
       try {
         this.peer.destroy();
       } catch (e) {}
+      this.peer = null;
     }
     this.role = null;
     this.roomId = null;

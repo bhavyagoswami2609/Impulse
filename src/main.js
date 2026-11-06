@@ -4,7 +4,7 @@ import { PhysicsWorld } from './physics/physics_world.js';
 import { AirHockeyPhysics } from './physics/air_hockey_physics.js';
 import { HandTracker } from './tracking/hand_tracker.js';
 import { FaceTracker } from './tracking/face_tracker.js';
-import { MultiplayerManager } from './network/multiplayer.js';
+import { MultiplayerManager, PACKET_TYPES, CONTROL_ACTIONS } from './network/multiplayer.js';
 import { TableTennisGame, GAME_STATES } from './game/table_tennis_game.js';
 import { AirHockeyGame, AIR_HOCKEY_STATES } from './game/air_hockey_game.js';
 import { StateController, APP_STATES } from './ui/state_controller.js';
@@ -33,6 +33,10 @@ class TableTennisApp {
       onDataReceived: (packet) => {
         if (packet instanceof Float32Array) {
           const tag = packet[0];
+          if (tag === PACKET_TYPES.CONTROL) {
+            this.handleControlPacket(packet);
+            return;
+          }
           if (this.gameMode === 'hockey' || tag === 3.0 || tag === 4.0) {
             this.hockeyGame.handleNetworkData(packet);
           } else {
@@ -47,6 +51,24 @@ class TableTennisApp {
         }
       },
       onStatusChange: (status, msg) => this.updateMultiplayerStatus(status, msg),
+      onPartyReady: (role, peerId, discipline) => {
+        if (this.stateController) {
+          this.stateController.onPartyPlayerLoaded(role);
+        }
+      },
+      onRemoteStartMatch: (discipline) => {
+        if (discipline) {
+          this.setGameMode(discipline === 1.0 ? 'tennis' : 'hockey');
+        }
+        if (this.stateController) {
+          this.stateController.startMatchAsClient();
+        }
+      },
+      onPartyLeft: () => {
+        if (this.stateController) {
+          this.stateController.onPartyLeft();
+        }
+      },
     });
 
     // 4. Initialize MediaPipe Hand Tracker (Decoupled boot pipeline: does NOT auto-boot straight into gameplay)
@@ -137,6 +159,12 @@ class TableTennisApp {
 
     if (this.stateController && this.stateController.discipline !== mode) {
       this.stateController.setDiscipline(mode);
+    }
+
+    // Sync discipline to client if host in active online room
+    if (this.multiplayer && this.multiplayer.isConnected && this.multiplayer.role === 'host') {
+      const discCode = mode === 'tennis' ? 1.0 : 2.0;
+      this.multiplayer.sendControl(CONTROL_ACTIONS.DISCIPLINE_SYNC, discCode);
     }
 
     const activeGame = mode === 'hockey' ? this.hockeyGame : this.game;
@@ -288,6 +316,20 @@ class TableTennisApp {
     }, 320);
   }
 
+  createRoom(roomId) {
+    const code = this.multiplayer.createRoom(roomId);
+    this.tracker.setPlayerRole('host');
+    this.scene.setViewMode('host');
+    this.currentCameraView = 'host';
+
+    if (this.stateController) {
+      this.stateController.setMatchMode('online');
+      this.stateController.updatePartyLobbyUI(code, 'host');
+      this.stateController.requestStartCamera();
+    }
+    return code;
+  }
+
   joinAsClient(code) {
     this.multiplayer.joinRoom(code);
     this.tracker.setPlayerRole('client');
@@ -296,8 +338,100 @@ class TableTennisApp {
 
     if (this.stateController) {
       this.stateController.setMatchMode('online');
+      this.stateController.updatePartyLobbyUI(code, 'client');
       if (this.stateController.hudP1Label) this.stateController.hudP1Label.textContent = 'Host';
       if (this.stateController.hudP2Label) this.stateController.hudP2Label.textContent = 'You (Client)';
+      this.stateController.requestStartCamera();
+    }
+  }
+
+  handleControlPacket(packet) {
+    const action = packet[1];
+    const param1 = packet[2]; // e.g. discipline code (1.0 = tennis, 2.0 = hockey)
+
+    switch (action) {
+      case CONTROL_ACTIONS.PARTY_JOINED: {
+        // Host receives that client has joined the party
+        this.multiplayer.isPartyReady = true;
+        const discCode = this.gameMode === 'tennis' ? 1.0 : 2.0;
+        this.multiplayer.sendControl(CONTROL_ACTIONS.PARTY_ACK, discCode);
+        if (this.stateController) {
+          this.stateController.onPartyPlayerLoaded('host');
+        }
+        break;
+      }
+
+      case CONTROL_ACTIONS.PARTY_ACK: {
+        // Client receives acknowledgment and active discipline from host
+        this.multiplayer.isPartyReady = true;
+        if (param1 === 1.0 && this.gameMode !== 'tennis') {
+          this.setGameMode('tennis');
+        } else if (param1 === 2.0 && this.gameMode !== 'hockey') {
+          this.setGameMode('hockey');
+        }
+        if (this.stateController) {
+          this.stateController.onPartyPlayerLoaded('client');
+        }
+        break;
+      }
+
+      case CONTROL_ACTIONS.DISCIPLINE_SYNC: {
+        // Client syncs discipline from host
+        const disc = param1 === 1.0 ? 'tennis' : 'hockey';
+        if (this.gameMode !== disc) {
+          this.setGameMode(disc);
+        }
+        if (this.stateController) {
+          this.stateController.setDiscipline(disc);
+          this.stateController.showToast(`Discipline set to ${disc === 'hockey' ? 'Air Hockey' : 'Table Tennis'}`);
+        }
+        break;
+      }
+
+      case CONTROL_ACTIONS.START_MATCH: {
+        // Client launches match simultaneously with host
+        const disc = param1 === 1.0 ? 'tennis' : 'hockey';
+        if (this.gameMode !== disc) {
+          this.setGameMode(disc);
+        }
+        if (this.stateController) {
+          this.stateController.startMatchAsClient();
+        }
+        break;
+      }
+
+      case CONTROL_ACTIONS.LEAVE_PARTY: {
+        if (this.stateController) {
+          this.stateController.onPartyLeft();
+        }
+        break;
+      }
+    }
+  }
+
+  startOnlineMatchAsHost() {
+    if (!this.multiplayer.isConnected || !this.multiplayer.isPartyReady) {
+      if (this.stateController) {
+        this.stateController.showToast('Waiting for Player 2 to join...');
+      }
+      return;
+    }
+
+    const discCode = this.gameMode === 'tennis' ? 1.0 : 2.0;
+
+    // Send START_MATCH control signal burst to client for zero drop rate
+    this.multiplayer.sendControl(CONTROL_ACTIONS.START_MATCH, discCode);
+    setTimeout(() => {
+      if (this.multiplayer.isConnected) {
+        this.multiplayer.sendControl(CONTROL_ACTIONS.START_MATCH, discCode);
+      }
+    }, 45);
+
+    // Launch match on host
+    if (this.stateController) {
+      this.stateController.triggerCalibrationGate(() => {
+        this.stateController.startMatch();
+      });
     }
   }
 
@@ -321,6 +455,9 @@ class TableTennisApp {
       this.stateController.showToast(role === 'host' ? 'Opponent Connected' : 'Connected to Host');
       if (role === 'host') {
         if (this.stateController.hudP2Label) this.stateController.hudP2Label.textContent = 'Player 2';
+      } else {
+        if (this.stateController.hudP1Label) this.stateController.hudP1Label.textContent = 'Host';
+        if (this.stateController.hudP2Label) this.stateController.hudP2Label.textContent = 'You (Client)';
       }
     }
     sound.playScore(true);
@@ -328,7 +465,7 @@ class TableTennisApp {
 
   onPeerDisconnected() {
     if (this.stateController) {
-      this.stateController.showToast('Peer Disconnected');
+      this.stateController.onPartyLeft();
     }
   }
 

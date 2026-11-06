@@ -68,12 +68,31 @@ export class StateController {
 
     // Online multiplayer controls
     this.btnCreateMatch = document.getElementById('btn-create-match');
-    this.roomCodeWrap = document.getElementById('room-code-display-wrap');
-    this.roomCodeVal = document.getElementById('room-code-val');
-    this.btnCopyRoomCode = document.getElementById('btn-copy-room-code');
     this.inputMatchCode = document.getElementById('input-match-code');
     this.btnJoinMatch = document.getElementById('btn-join-match');
     this.onlineStatusHint = document.getElementById('online-status-hint');
+
+    // Party lobby elements
+    this.onlineSplitRow = document.getElementById('online-split-row');
+    this.partyLobbyCard = document.getElementById('party-lobby-card');
+    this.partyRoomCodeVal = document.getElementById('party-room-code-val');
+    this.btnPartyCopyCode = document.getElementById('btn-party-copy-code');
+    this.partyStatusPill = document.getElementById('party-status-pill');
+    this.partyStatusPillText = document.getElementById('party-status-pill-text');
+    this.btnPartyLeave = document.getElementById('btn-party-leave');
+    this.partySlotP1 = document.getElementById('party-slot-p1');
+    this.partyP1Name = document.getElementById('party-p1-name');
+    this.partyP1Role = document.getElementById('party-p1-role');
+    this.partyP1Status = document.getElementById('party-p1-status');
+    this.partyP1StatusText = document.getElementById('party-p1-status-text');
+    this.partySlotP2 = document.getElementById('party-slot-p2');
+    this.partyP2Avatar = document.getElementById('party-p2-avatar');
+    this.partyP2Name = document.getElementById('party-p2-name');
+    this.partyP2Role = document.getElementById('party-p2-role');
+    this.partyP2Status = document.getElementById('party-p2-status');
+    this.partyP2StatusText = document.getElementById('party-p2-status-text');
+    this.partyInfoBanner = document.getElementById('party-info-banner');
+    this.btnStartMatchText = document.getElementById('btn-start-match-text');
 
     // Main action
     this.btnStartMatch = document.getElementById('btn-start-match');
@@ -169,28 +188,33 @@ export class StateController {
     // Online match actions
     if (this.btnCreateMatch) {
       this.btnCreateMatch.addEventListener('click', () => {
-        const code = this.app.multiplayer.createRoom();
-        if (this.roomCodeWrap && this.roomCodeVal) {
-          this.roomCodeWrap.style.display = 'flex';
-          this.roomCodeVal.textContent = code;
-        }
+        const code = this.app.createRoom();
         if (this.onlineStatusHint) {
           this.onlineStatusHint.textContent = `Room ${code} created. Waiting for opponent...`;
         }
       });
     }
 
-    if (this.btnCopyRoomCode) {
-      this.btnCopyRoomCode.addEventListener('click', () => {
-        const code = this.roomCodeVal ? this.roomCodeVal.textContent : '';
-        if (code) {
+    if (this.btnPartyCopyCode) {
+      this.btnPartyCopyCode.addEventListener('click', () => {
+        const code = this.partyRoomCodeVal ? this.partyRoomCodeVal.textContent : '';
+        if (code && code !== '-----') {
           navigator.clipboard.writeText(code).then(() => {
-            this.btnCopyRoomCode.textContent = 'Copied';
+            this.btnPartyCopyCode.textContent = 'Copied';
             setTimeout(() => {
-              if (this.btnCopyRoomCode) this.btnCopyRoomCode.textContent = 'Copy';
+              if (this.btnPartyCopyCode) this.btnPartyCopyCode.textContent = 'Copy';
             }, 1800);
           });
         }
+      });
+    }
+
+    if (this.btnPartyLeave) {
+      this.btnPartyLeave.addEventListener('click', () => {
+        if (this.app?.multiplayer) {
+          this.app.multiplayer.disconnect();
+        }
+        this.onPartyLeft();
       });
     }
 
@@ -235,9 +259,30 @@ export class StateController {
       });
     }
 
-    // Start match action triggers Hand Calibration Gate
+    // Start match action triggers Hand Calibration Gate (or launches online match)
     if (this.btnStartMatch) {
       this.btnStartMatch.addEventListener('click', () => {
+        if (this.matchMode === 'online') {
+          const mp = this.app?.multiplayer;
+          if (!mp || !mp.roomId) {
+            this.showToast('Please create or join a room first');
+            return;
+          }
+          if (mp.role === 'client') {
+            this.showToast('Waiting for room leader to start match...');
+            return;
+          }
+          if (mp.role === 'host') {
+            if (!mp.isPartyReady) {
+              this.showToast('Waiting for Player 2 to join...');
+              return;
+            }
+            this.app.startOnlineMatchAsHost();
+            return;
+          }
+        }
+
+        // Solo match vs Bot
         this.triggerCalibrationGate(() => {
           this.startMatch();
         });
@@ -375,8 +420,186 @@ export class StateController {
 
     // Update in-game opponent label
     if (this.hudP2Label) {
-      this.hudP2Label.textContent = mode === 'online' ? 'Player 2' : 'Bot';
+      const isClient = this.app?.multiplayer?.role === 'client';
+      this.hudP2Label.textContent = mode === 'online' ? (isClient ? 'You (Client)' : 'Player 2') : 'Bot';
     }
+
+    this.updateStartMatchButtonState();
+  }
+
+  updateStartMatchButtonState() {
+    if (!this.btnStartMatch) return;
+    const mp = this.app?.multiplayer;
+    const btnText = this.btnStartMatchText || this.btnStartMatch.querySelector('span') || this.btnStartMatch;
+
+    // Remove special classes
+    this.btnStartMatch.classList.remove('party-ready', 'client-waiting', 'disabled');
+
+    if (this.matchMode === 'solo') {
+      this.btnStartMatch.disabled = false;
+      btnText.textContent = 'Start Match';
+      return;
+    }
+
+    // Online Mode
+    if (!mp || !mp.roomId) {
+      this.btnStartMatch.disabled = true;
+      this.btnStartMatch.classList.add('disabled');
+      btnText.textContent = 'Create or Join Room';
+      return;
+    }
+
+    if (mp.role === 'host') {
+      if (mp.isPartyReady) {
+        this.btnStartMatch.disabled = false;
+        this.btnStartMatch.classList.add('party-ready');
+        btnText.textContent = 'Start Match (Player 2 Ready)';
+      } else {
+        this.btnStartMatch.disabled = true;
+        this.btnStartMatch.classList.add('disabled');
+        btnText.textContent = 'Waiting for Player 2 to Join...';
+      }
+    } else if (mp.role === 'client') {
+      this.btnStartMatch.disabled = true;
+      if (mp.isPartyReady) {
+        this.btnStartMatch.classList.add('client-waiting');
+        btnText.textContent = 'Waiting for Host to Start...';
+      } else {
+        this.btnStartMatch.classList.add('disabled');
+        btnText.textContent = 'Connecting to Room...';
+      }
+    }
+  }
+
+  updatePartyLobbyUI(roomId, role) {
+    if (!this.partyLobbyCard) return;
+    const mp = this.app?.multiplayer;
+
+    if (roomId) {
+      if (this.onlineSplitRow) this.onlineSplitRow.style.display = 'none';
+      this.partyLobbyCard.style.display = 'block';
+      if (this.partyRoomCodeVal) this.partyRoomCodeVal.textContent = roomId;
+
+      if (role === 'host') {
+        if (this.partySlotP1) this.partySlotP1.className = 'party-slot p1 ready';
+        if (this.partyP1Name) this.partyP1Name.textContent = 'Host (You)';
+        if (this.partyP1Role) this.partyP1Role.textContent = 'Room Leader';
+        if (this.partyP1Status) this.partyP1Status.className = 'party-slot-status ready';
+        if (this.partyP1StatusText) this.partyP1StatusText.textContent = 'Ready';
+
+        if (!mp?.isPartyReady) {
+          if (this.partySlotP2) this.partySlotP2.className = 'party-slot p2';
+          if (this.partyP2Name) this.partyP2Name.textContent = 'Waiting for opponent...';
+          if (this.partyP2Role) this.partyP2Role.textContent = 'Guest';
+          if (this.partyP2Status) this.partyP2Status.className = 'party-slot-status standby';
+          if (this.partyP2StatusText) this.partyP2StatusText.textContent = 'Standby';
+          if (this.partyStatusPill) this.partyStatusPill.className = 'party-status-pill waiting';
+          if (this.partyStatusPillText) this.partyStatusPillText.textContent = 'Waiting for Player 2...';
+          if (this.partyInfoBanner) {
+            this.partyInfoBanner.className = 'party-info-banner';
+            this.partyInfoBanner.textContent = 'Share this 5-letter code with an opponent to load player.';
+          }
+        }
+      } else if (role === 'client') {
+        if (this.partySlotP1) this.partySlotP1.className = 'party-slot p1 ready';
+        if (this.partyP1Name) this.partyP1Name.textContent = 'Host';
+        if (this.partyP1Role) this.partyP1Role.textContent = 'Room Leader';
+        if (this.partyP1Status) this.partyP1Status.className = 'party-slot-status ready';
+        if (this.partyP1StatusText) this.partyP1StatusText.textContent = 'Ready';
+
+        if (this.partySlotP2) this.partySlotP2.className = 'party-slot p2';
+        if (this.partyP2Name) this.partyP2Name.textContent = 'You (Guest)';
+        if (this.partyP2Role) this.partyP2Role.textContent = 'Guest';
+
+        if (!mp?.isPartyReady) {
+          if (this.partyP2Status) this.partyP2Status.className = 'party-slot-status standby';
+          if (this.partyP2StatusText) this.partyP2StatusText.textContent = 'Connecting...';
+          if (this.partyStatusPill) this.partyStatusPill.className = 'party-status-pill waiting';
+          if (this.partyStatusPillText) this.partyStatusPillText.textContent = 'Connecting to Room...';
+          if (this.partyInfoBanner) {
+            this.partyInfoBanner.className = 'party-info-banner';
+            this.partyInfoBanner.textContent = 'Connecting to host party lobby...';
+          }
+        }
+      }
+    } else {
+      if (this.onlineSplitRow) this.onlineSplitRow.style.display = 'flex';
+      this.partyLobbyCard.style.display = 'none';
+      if (this.partySlotP1) this.partySlotP1.className = 'party-slot p1';
+      if (this.partySlotP2) this.partySlotP2.className = 'party-slot p2';
+    }
+
+    this.updateStartMatchButtonState();
+  }
+
+  onPartyPlayerLoaded(role) {
+    if (this.partyStatusPill) {
+      this.partyStatusPill.className = 'party-status-pill ready';
+    }
+    if (this.partyStatusPillText) {
+      this.partyStatusPillText.textContent = 'Party Ready (2/2 Players Loaded)';
+    }
+
+    if (this.partySlotP1) this.partySlotP1.className = 'party-slot p1 ready';
+    if (this.partySlotP2) this.partySlotP2.className = 'party-slot p2 ready';
+
+    if (this.partyP2Status) {
+      this.partyP2Status.className = 'party-slot-status ready';
+    }
+    if (this.partyP2StatusText) {
+      this.partyP2StatusText.textContent = 'Player Loaded!';
+    }
+
+    if (role === 'host') {
+      if (this.partyP2Name) this.partyP2Name.textContent = 'Player 2';
+      if (this.partyInfoBanner) {
+        this.partyInfoBanner.className = 'party-info-banner ready';
+        this.partyInfoBanner.textContent = 'Player loaded! As Room Leader, click Start Match to begin.';
+      }
+      this.showToast('Player Loaded! Ready to start');
+    } else {
+      if (this.partyP2Name) this.partyP2Name.textContent = 'You (Guest)';
+      if (this.partyInfoBanner) {
+        this.partyInfoBanner.className = 'party-info-banner ready';
+        this.partyInfoBanner.textContent = 'Player loaded! Waiting for Room Leader to start match...';
+      }
+      this.showToast('Player Loaded! Waiting for host...');
+    }
+
+    this.updateStartMatchButtonState();
+  }
+
+  onPartyLeft() {
+    const mp = this.app?.multiplayer;
+    if (mp && mp.role === 'host' && mp.roomId) {
+      mp.isPartyReady = false;
+      if (this.partySlotP2) this.partySlotP2.className = 'party-slot p2';
+      if (this.partyP2Name) this.partyP2Name.textContent = 'Waiting for opponent...';
+      if (this.partyP2Status) this.partyP2Status.className = 'party-slot-status standby';
+      if (this.partyP2StatusText) this.partyP2StatusText.textContent = 'Standby';
+      if (this.partyStatusPill) this.partyStatusPill.className = 'party-status-pill waiting';
+      if (this.partyStatusPillText) this.partyStatusPillText.textContent = 'Waiting for Player 2...';
+      if (this.partyInfoBanner) {
+        this.partyInfoBanner.className = 'party-info-banner';
+        this.partyInfoBanner.textContent = 'Opponent left the room. Share code to load a new player.';
+      }
+      this.showToast('Opponent left the party');
+    } else {
+      if (this.onlineSplitRow) this.onlineSplitRow.style.display = 'flex';
+      if (this.partyLobbyCard) this.partyLobbyCard.style.display = 'none';
+      if (this.partySlotP1) this.partySlotP1.className = 'party-slot p1';
+      if (this.partySlotP2) this.partySlotP2.className = 'party-slot p2';
+      if (this.partyRoomCodeVal) this.partyRoomCodeVal.textContent = '-----';
+      if (mp && mp.role === 'client') {
+        this.showToast('Disconnected from Room');
+      }
+    }
+    this.updateStartMatchButtonState();
+  }
+
+  startMatchAsClient() {
+    this.startMatch();
+    this.showToast('Match Started by Host!');
   }
 
   setDifficulty(difficulty) {
@@ -406,6 +629,8 @@ export class StateController {
     if (this.pauseModal) this.pauseModal.classList.remove('open');
     if (this.calibModal) this.calibModal.classList.remove('open');
     if (this.matchoverModal) this.matchoverModal.classList.remove('open');
+
+    this.updateStartMatchButtonState();
   }
 
   setCameraUIStarting(isStarting) {
@@ -924,6 +1149,8 @@ export class StateController {
     if (this.app && this.app.scene) {
       this.app.scene.setOrbit(true);
     }
+
+    this.updateStartMatchButtonState();
 
     window.scrollTo({ top: 0, behavior: 'smooth' });
     this.showToast('Returned to Menu');
