@@ -558,7 +558,7 @@ export function createAirHockeyTable() {
   const playfieldMesh = new THREE.Mesh(playfieldGeo, playfieldMat);
   playfieldMesh.rotation.x = -Math.PI / 2;
   playfieldMesh.position.set(0, H, 0);
-  playfieldMesh.receiveShadow = true;
+  playfieldMesh.receiveShadow = false; // Smooth uniform illumination without shadow acne
   tableGroup.add(playfieldMesh);
 
   // Structural substrate underneath the playfield laminate
@@ -958,8 +958,8 @@ export function createAirHockeyTable() {
   const legHeight = H - apronHeight;
   const legGeo = new THREE.BoxGeometry(0.078, legHeight, 0.078);
   const steelLegMat = new THREE.MeshStandardMaterial({
-    color: 0x1a1e26, // Dark metallic titanium anthracite
-    metalness: 0.85,
+    color: 0x7a8c9e, // Polished commercial tournament steel
+    metalness: 0.78,
     roughness: 0.28,
   });
 

@@ -14,7 +14,8 @@ assert.strictEqual(ttTable.name, 'TableTennisTable', 'Name must be TableTennisTa
 // Tabletop color verification (ITTF Blue: 0x163d70)
 const topMesh = ttTable.children.find((c) => c.isMesh && c.geometry.type === 'BoxGeometry' && c.material.color?.getHex() === 0x163d70);
 assert(topMesh, 'Tabletop must be classic ITTF regulation blue (0x163d70)');
-console.log('✓ PASS: Tabletop restored to classic ITTF regulation blue (0x163d70)');
+assert.strictEqual(topMesh.receiveShadow, false, 'Tabletop receiveShadow must be false to eliminate shadow map acne/artifacts');
+console.log('✓ PASS: Tabletop restored to classic ITTF regulation blue (0x163d70) with receiveShadow = false');
 
 // White boundary lines check
 const whiteLines = ttTable.children.filter((c) => c.isMesh && c.material?.color?.getHex() === 0xffffff);
@@ -22,17 +23,17 @@ assert(whiteLines.length >= 5, `Expected at least 5 white boundary lines (2 side
 console.log(`✓ PASS: ${whiteLines.length} crisp white boundary lines verified (sidelines, endlines, centerline)`);
 
 // Polished Legs & Undercarriage check
-const legs = ttTable.children.filter((c) => c.isMesh && c.geometry.type === 'BoxGeometry' && c.material?.color?.getHex() === 0x1a1e24);
+const legs = ttTable.children.filter((c) => c.isMesh && c.geometry.type === 'BoxGeometry' && (c.material?.color?.getHex() === 0x8294a6 || c.material?.color?.getHex() === 0x1a1e24));
 assert.strictEqual(legs.length, 6, `Expected 6 tournament-grade steel legs, found ${legs.length}`);
 console.log('✓ PASS: 6 polished tournament steel legs verified (4 outer corner + 2 center net-line legs)');
 
 // Chrome Leveling Feet & Rubber Floor Pads check
-const chromeParts = ttTable.children.filter((c) => c.isMesh && c.material?.color?.getHex() === 0xd8dde4);
+const chromeParts = ttTable.children.filter((c) => c.isMesh && (c.material?.color?.getHex() === 0xe2e7ee || c.material?.color?.getHex() === 0xd8dde4));
 assert(chromeParts.length >= 6, `Expected at least 6 chrome leveling foot cups/hardware, found ${chromeParts.length}`);
 console.log(`✓ PASS: ${chromeParts.length} machined chrome hardware & leveling cups verified`);
 
 // Cross-bracing and diagonal structural struts check
-const cylindricalSupports = ttTable.children.filter((c) => c.isMesh && c.geometry.type === 'CylinderGeometry' && c.material?.color?.getHex() === 0x1a1e24);
+const cylindricalSupports = ttTable.children.filter((c) => c.isMesh && c.geometry.type === 'CylinderGeometry' && (c.material?.color?.getHex() === 0x8294a6 || c.material?.color?.getHex() === 0x1a1e24));
 assert(cylindricalSupports.length >= 7, `Expected at least 7 structural tubular steel struts/crossbars, found ${cylindricalSupports.length}`);
 console.log(`✓ PASS: ${cylindricalSupports.length} structural cross-bracing and diagonal linkage struts verified`);
 
@@ -81,7 +82,7 @@ assert(hockeyTable, 'Air Hockey table must be created');
 assert.strictEqual(hockeyTable.name, 'AirHockeyTable', 'Name must be AirHockeyTable');
 
 // Check Commercial Pedestal Legs
-const ahLegs = hockeyTable.children.filter((c) => c.isMesh && c.geometry.type === 'BoxGeometry' && c.material?.color?.getHex() === 0x1a1e26);
+const ahLegs = hockeyTable.children.filter((c) => c.isMesh && c.geometry.type === 'BoxGeometry' && (c.material?.color?.getHex() === 0x7a8c9e || c.material?.color?.getHex() === 0x1a1e26));
 // Expect 4 main legs + 1 longitudinal stretcher = at least 5
 assert(ahLegs.length >= 5, `Expected at least 5 heavy-duty steel leg/stretcher components, found ${ahLegs.length}`);
 console.log(`✓ PASS: ${ahLegs.length} commercial heavy-duty steel leg columns and longitudinal stretcher verified`);

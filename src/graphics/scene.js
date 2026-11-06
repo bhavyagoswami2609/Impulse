@@ -33,9 +33,7 @@ export class TableTennisScene {
       this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
       this.renderer.shadowMap.enabled = true;
       this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-      // Disable real-time shadow map updates every frame on dynamic meshes
-      this.renderer.shadowMap.autoUpdate = false;
-      this.renderer.shadowMap.needsUpdate = true;
+      this.renderer.shadowMap.autoUpdate = true;
       this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
       this.renderer.toneMappingExposure = 1.15;
       if (this.container) {
@@ -191,10 +189,16 @@ export class TableTennisScene {
   }
 
   setupLighting() {
-    const ambientLight = new THREE.AmbientLight(0xffeed6, 0.65);
+    // 1. Ambient Light - warm tournament court ambient
+    const ambientLight = new THREE.AmbientLight(0xfff2e0, 0.70);
     this.scene.add(ambientLight);
 
-    const keyLight = new THREE.DirectionalLight(0xfff8ee, 1.55);
+    // 2. Tournament Sky & Court Hemisphere Light - eliminates pitch-black void beneath meshes
+    const hemiLight = new THREE.HemisphereLight(0xfffaee, 0x323a48, 0.65);
+    this.scene.add(hemiLight);
+
+    // 3. Overhead Tournament Key Light with positive bias (no self-shadow acne)
+    const keyLight = new THREE.DirectionalLight(0xfff8ee, 1.45);
     keyLight.position.set(1.5, 6.0, -1.0);
     keyLight.castShadow = true;
     keyLight.shadow.mapSize.width = 2048;
@@ -205,24 +209,40 @@ export class TableTennisScene {
     keyLight.shadow.camera.right = 3.5;
     keyLight.shadow.camera.top = 3.5;
     keyLight.shadow.camera.bottom = -3.5;
-    keyLight.shadow.bias = -0.0005;
+    keyLight.shadow.bias = 0.0002;
+    keyLight.shadow.normalBias = 0.02;
     this.scene.add(keyLight);
 
-    // Warm metallic amber fill accent
+    // 4. Warm metallic amber fill accent
     const fillLight = new THREE.DirectionalLight(0xd4a03c, 0.55);
     fillLight.position.set(-2.0, 5.0, 3.0);
     this.scene.add(fillLight);
 
-    // Subtle arena rim light for tiered grandstand depth
-    const arenaRimLight = new THREE.DirectionalLight(0x2a3545, 0.35);
+    // 5. Arena rim light for tiered grandstand depth
+    const arenaRimLight = new THREE.DirectionalLight(0x323e50, 0.40);
     arenaRimLight.position.set(0, 8.0, -8.0);
     this.scene.add(arenaRimLight);
 
-    const tableSpot = new THREE.SpotLight(0xfff2dc, 2.2, 12, Math.PI / 4, 0.45, 1.2);
+    // 6. Overhead Table Center Spotlight
+    const tableSpot = new THREE.SpotLight(0xfff2dc, 2.0, 12, Math.PI / 4, 0.45, 1.2);
     tableSpot.position.set(0, 5.2, 0);
     tableSpot.target.position.set(0, TABLE_HEIGHT, 0);
     this.scene.add(tableSpot);
     this.scene.add(tableSpot.target);
+
+    // 7. Undercarriage Fill & Ground Bounce Lights
+    // Ensures legs, wheels, leveling feet, and floor contact are clearly visible and grounded
+    const underTableLight = new THREE.PointLight(0xe8f0fc, 1.2, 5.0, 1.2);
+    underTableLight.position.set(0, 0.38, 0);
+    this.scene.add(underTableLight);
+
+    const frontUndercarriageFill = new THREE.DirectionalLight(0xdde6f2, 0.65);
+    frontUndercarriageFill.position.set(0, 1.2, -3.8);
+    this.scene.add(frontUndercarriageFill);
+
+    const rearUndercarriageFill = new THREE.DirectionalLight(0xdde6f2, 0.55);
+    rearUndercarriageFill.position.set(0, 1.2, 3.8);
+    this.scene.add(rearUndercarriageFill);
   }
 
   setupBallTrail() {

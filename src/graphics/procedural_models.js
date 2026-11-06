@@ -39,16 +39,16 @@ function createSafeCanvasTexture(width, height, drawFn) {
  */
 function createFloorTexture() {
   const tex = createSafeCanvasTexture(1024, 1024, (ctx) => {
-    // 1. Dark luxury warm near-black walnut foundation
+    // 1. Warm tournament court hardwood foundation
     const baseGrad = ctx.createLinearGradient(0, 0, 1024, 1024);
-    baseGrad.addColorStop(0, '#0c0b09');
-    baseGrad.addColorStop(0.5, '#12110e');
-    baseGrad.addColorStop(1, '#0e0d0b');
+    baseGrad.addColorStop(0, '#1d1712');
+    baseGrad.addColorStop(0.5, '#28211a');
+    baseGrad.addColorStop(1, '#1f1913');
     ctx.fillStyle = baseGrad;
     ctx.fillRect(0, 0, 1024, 1024);
 
-    // 2. Parquet plank joints with subtle warm amber micro-lines
-    ctx.strokeStyle = 'rgba(212, 160, 60, 0.055)';
+    // 2. Parquet plank joints with warm amber micro-lines
+    ctx.strokeStyle = 'rgba(212, 160, 60, 0.14)';
     ctx.lineWidth = 1.5;
     const step = 64;
     for (let x = 0; x < 1024; x += step) {
@@ -59,7 +59,7 @@ function createFloorTexture() {
     }
 
     // Staggered plank subdivisions
-    ctx.strokeStyle = 'rgba(18, 17, 15, 0.85)';
+    ctx.strokeStyle = 'rgba(42, 34, 26, 0.85)';
     ctx.lineWidth = 2;
     for (let y = 0; y < 1024; y += step * 2) {
       for (let x = 0; x < 1024; x += step) {
@@ -75,8 +75,8 @@ function createFloorTexture() {
     for (let i = 0; i < 35000; i++) {
       const rx = Math.random() * 1024;
       const ry = Math.random() * 1024;
-      const lum = Math.random() > 0.6 ? '212, 160, 60' : '255, 255, 255';
-      const alpha = Math.random() * 0.025;
+      const lum = Math.random() > 0.6 ? '212, 160, 60' : '240, 230, 215';
+      const alpha = Math.random() * 0.028;
       ctx.fillStyle = `rgba(${lum}, ${alpha})`;
       ctx.fillRect(rx, ry, 2, 2);
     }
@@ -183,7 +183,8 @@ export function createTableTennisTable() {
   const tableTopMesh = new THREE.Mesh(tableTopGeo, tableTopMaterial);
   tableTopMesh.position.y = TABLE_HEIGHT - TABLE_THICKNESS / 2;
   tableTopMesh.castShadow = true;
-  tableTopMesh.receiveShadow = true;
+  // Never receive directional shadow map to eliminate dark shadow acne / artifacts on playing surface
+  tableTopMesh.receiveShadow = false;
   tableGroup.add(tableTopMesh);
 
   // 2. CRISP REGULATION WHITE BOUNDARY LINES
@@ -202,11 +203,13 @@ export function createTableTennisTable() {
   const leftSideLine = new THREE.Mesh(sideLineGeo, lineMat);
   leftSideLine.rotation.x = -Math.PI / 2;
   leftSideLine.position.set(-TABLE_WIDTH / 2 + lineWidth / 2, lineElevation, 0);
+  leftSideLine.receiveShadow = false;
   tableGroup.add(leftSideLine);
 
   const rightSideLine = new THREE.Mesh(sideLineGeo, lineMat);
   rightSideLine.rotation.x = -Math.PI / 2;
   rightSideLine.position.set(TABLE_WIDTH / 2 - lineWidth / 2, lineElevation, 0);
+  rightSideLine.receiveShadow = false;
   tableGroup.add(rightSideLine);
 
   // Near & Far Endlines
@@ -214,11 +217,13 @@ export function createTableTennisTable() {
   const nearEndLine = new THREE.Mesh(endLineGeo, lineMat);
   nearEndLine.rotation.x = -Math.PI / 2;
   nearEndLine.position.set(0, lineElevation, -TABLE_LENGTH / 2 + lineWidth / 2);
+  nearEndLine.receiveShadow = false;
   tableGroup.add(nearEndLine);
 
   const farEndLine = new THREE.Mesh(endLineGeo, lineMat);
   farEndLine.rotation.x = -Math.PI / 2;
   farEndLine.position.set(0, lineElevation, TABLE_LENGTH / 2 - lineWidth / 2);
+  farEndLine.receiveShadow = false;
   tableGroup.add(farEndLine);
 
   // Center 3mm Division Line
@@ -226,6 +231,7 @@ export function createTableTennisTable() {
   const centerLine = new THREE.Mesh(centerLineGeo, lineMat);
   centerLine.rotation.x = -Math.PI / 2;
   centerLine.position.set(0, lineElevation, 0);
+  centerLine.receiveShadow = false;
   tableGroup.add(centerLine);
 
   // 3. UNDER-TABLE APRON FRAME (Classic tournament dark navy/black steel)
@@ -255,25 +261,33 @@ export function createTableTennisTable() {
   tableGroup.add(farApron);
 
   // 4. POLISHED TOURNAMENT STEEL LEGS & UNDERCARRIAGE
-  const legThickness = 0.050; // 50mm square steel tubing
+  // Heavy-duty 54mm square steel tubing positioned prominently at outer corners and center net-line
+  const legThickness = 0.054;
   const legHeight = TABLE_HEIGHT - TABLE_THICKNESS;
   const legGeo = new THREE.BoxGeometry(legThickness, legHeight, legThickness);
   const steelLegMat = new THREE.MeshStandardMaterial({
-    color: 0x1a1e24, // Dark anthracite satin steel
-    roughness: 0.35,
-    metalness: 0.75,
+    color: 0x8294a6, // Polished tournament championship metallic steel
+    roughness: 0.28,
+    metalness: 0.78,
   });
 
   const chromeMat = new THREE.MeshStandardMaterial({
-    color: 0xd8dde4, // Machined stainless / chrome
-    roughness: 0.22,
-    metalness: 0.90,
+    color: 0xe2e7ee, // Machined stainless / bright chrome
+    roughness: 0.18,
+    metalness: 0.92,
+  });
+
+  const tireMat = new THREE.MeshStandardMaterial({
+    color: 0x181818, // Dense vulcanized rubber
+    roughness: 0.85,
+    metalness: 0.05,
   });
 
   const rubberFootMat = new THREE.MeshBasicMaterial({ color: 0x111111 });
 
-  const legOffsetX = TABLE_WIDTH / 2 - 0.12;
-  const legOffsetZ = TABLE_LENGTH / 2 - 0.24;
+  // Outer corner placement so legs clearly frame the table and are immediately visible to player & spectators
+  const legOffsetX = TABLE_WIDTH / 2 - 0.05;
+  const legOffsetZ = TABLE_LENGTH / 2 - 0.16;
   const legY = legHeight / 2;
 
   // 6 Tournament legs: 4 outer corner legs + 2 center legs at net line
@@ -282,13 +296,14 @@ export function createTableTennisTable() {
     { x: legOffsetX, z: -legOffsetZ },  // South East
     { x: -legOffsetX, z: legOffsetZ },  // North West
     { x: legOffsetX, z: legOffsetZ },   // North East
-    { x: -legOffsetX * 0.92, z: 0 },    // Center West (Net line)
-    { x: legOffsetX * 0.92, z: 0 },     // Center East (Net line)
+    { x: -legOffsetX * 0.94, z: 0 },    // Center West (Net line)
+    { x: legOffsetX * 0.94, z: 0 },     // Center East (Net line)
   ];
 
-  const levelerCupGeo = new THREE.CylinderGeometry(0.034, 0.040, 0.020, 20);
-  const levelerRubberGeo = new THREE.CylinderGeometry(0.042, 0.044, 0.008, 20);
-  const collarGeo = new THREE.BoxGeometry(0.062, 0.016, 0.062);
+  const levelerCupGeo = new THREE.CylinderGeometry(0.046, 0.054, 0.020, 24);
+  const levelerRubberGeo = new THREE.CylinderGeometry(0.052, 0.054, 0.008, 24);
+  const levelerStemGeo = new THREE.CylinderGeometry(0.016, 0.016, 0.026, 16);
+  const collarGeo = new THREE.BoxGeometry(0.076, 0.018, 0.076);
 
   legConfigs.forEach((cfg) => {
     // Main tubular steel leg
@@ -300,8 +315,13 @@ export function createTableTennisTable() {
 
     // Chrome collar flange bracket connecting leg to the under-apron
     const collar = new THREE.Mesh(collarGeo, chromeMat);
-    collar.position.set(cfg.x, TABLE_HEIGHT - TABLE_THICKNESS - 0.008, cfg.z);
+    collar.position.set(cfg.x, TABLE_HEIGHT - TABLE_THICKNESS - 0.009, cfg.z);
     tableGroup.add(collar);
+
+    // Chrome threaded leveling stem
+    const stem = new THREE.Mesh(levelerStemGeo, chromeMat);
+    stem.position.set(cfg.x, 0.026, cfg.z);
+    tableGroup.add(stem);
 
     // Machined chrome leveling foot cup
     const footCup = new THREE.Mesh(levelerCupGeo, chromeMat);
@@ -316,7 +336,7 @@ export function createTableTennisTable() {
   });
 
   // Sturdy cross-bracing linkage bars connecting left & right leg pairs
-  const crossBraceGeo = new THREE.CylinderGeometry(0.013, 0.013, TABLE_WIDTH - 0.22, 16);
+  const crossBraceGeo = new THREE.CylinderGeometry(0.014, 0.014, TABLE_WIDTH - 0.10, 16);
   const bracePositionsZ = [-legOffsetZ, 0, legOffsetZ];
   bracePositionsZ.forEach((bz) => {
     const brace = new THREE.Mesh(crossBraceGeo, steelLegMat);
@@ -326,21 +346,21 @@ export function createTableTennisTable() {
 
     // Chrome coupling rings on brace ends
     for (let side of [-1, 1]) {
-      const ringGeo = new THREE.CylinderGeometry(0.018, 0.018, 0.022, 16);
+      const ringGeo = new THREE.CylinderGeometry(0.020, 0.020, 0.024, 16);
       const ring = new THREE.Mesh(ringGeo, chromeMat);
       ring.rotation.z = Math.PI / 2;
-      ring.position.set(side * (legOffsetX - 0.025), 0.22, bz);
+      ring.position.set(side * (legOffsetX - 0.022), 0.22, bz);
       tableGroup.add(ring);
     }
   });
 
   // Diagonal structural linkage struts connecting legs to center undercarriage
-  const strutLength = Math.hypot(legOffsetX * 0.4, 0.35, legOffsetZ * 0.55);
-  const strutGeo = new THREE.CylinderGeometry(0.010, 0.010, strutLength, 12);
+  const strutLength = Math.hypot(legOffsetX * 0.42, 0.36, legOffsetZ * 0.52);
+  const strutGeo = new THREE.CylinderGeometry(0.011, 0.011, strutLength, 12);
   for (let sx of [-1, 1]) {
     for (let sz of [-1, 1]) {
       const strut = new THREE.Mesh(strutGeo, steelLegMat);
-      strut.position.set(sx * (legOffsetX * 0.65), 0.38, sz * (legOffsetZ * 0.55));
+      strut.position.set(sx * (legOffsetX * 0.62), 0.38, sz * (legOffsetZ * 0.52));
       strut.quaternion.setFromUnitVectors(
         new THREE.Vector3(0, 1, 0),
         new THREE.Vector3(-sx * 0.35, 0.65, -sz * 0.65).normalize()
@@ -348,6 +368,38 @@ export function createTableTennisTable() {
       tableGroup.add(strut);
     }
   }
+
+  // Central ITTF Undercarriage Transport Wheel Carriage (4 heavy-duty dual-caster wheels at net line)
+  const wheelHubGeo = new THREE.CylinderGeometry(0.028, 0.028, 0.026, 16);
+  const wheelTireGeo = new THREE.CylinderGeometry(0.046, 0.046, 0.022, 20);
+  const wheelAxleGeo = new THREE.CylinderGeometry(0.010, 0.010, TABLE_WIDTH - 0.30, 16);
+
+  const wheelAxle = new THREE.Mesh(wheelAxleGeo, steelLegMat);
+  wheelAxle.rotation.z = Math.PI / 2;
+  wheelAxle.position.set(0, 0.046, 0);
+  tableGroup.add(wheelAxle);
+
+  const wheelPositionsX = [-0.42, -0.18, 0.18, 0.42];
+  wheelPositionsX.forEach((wx) => {
+    // Rubber tire
+    const tire = new THREE.Mesh(wheelTireGeo, tireMat);
+    tire.rotation.z = Math.PI / 2;
+    tire.position.set(wx, 0.046, 0);
+    tire.castShadow = true;
+    tableGroup.add(tire);
+
+    // Chrome center hub
+    const hub = new THREE.Mesh(wheelHubGeo, chromeMat);
+    hub.rotation.z = Math.PI / 2;
+    hub.position.set(wx, 0.046, 0);
+    tableGroup.add(hub);
+
+    // Vertical wheel caster strut connecting axle to undercarriage center crossbar
+    const casterStrutGeo = new THREE.CylinderGeometry(0.009, 0.009, 0.174, 12);
+    const casterStrut = new THREE.Mesh(casterStrutGeo, steelLegMat);
+    casterStrut.position.set(wx, 0.133, 0);
+    tableGroup.add(casterStrut);
+  });
 
   // 5. REGULATION TOURNAMENT NET ASSEMBLY
   const totalNetWidth = TABLE_WIDTH + NET_OVERHANG * 2;
