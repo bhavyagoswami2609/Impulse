@@ -71,10 +71,11 @@ export class PhysicsWorld {
     this.setupPaddles();
     this.setupBall();
 
-    this.lastTableBounceTime = 0;
-    this.lastPaddleHitTime = 0;
+    this.lastTableBounceTime = -1000;
+    this.lastPaddleHitTime = -1000;
     this.isInRally = false;
     this.isServeFlight = false;
+    this.isSmashFlight = false;
 
     this.setupCollisionListeners();
   }
@@ -209,6 +210,7 @@ export class PhysicsWorld {
         const vy = Math.abs(this.ballBody.velocity.y);
         if (vy > 0.28 && now - this.lastTableBounceTime > 90) {
           this.lastTableBounceTime = now;
+          this.isSmashFlight = false;
           const bouncePos = this.ballBody.position;
           const side = bouncePos.z < 0 ? 1 : 2;
           this.callbacks.onBallBounceTable(bouncePos, side);
@@ -317,11 +319,11 @@ export class PhysicsWorld {
         const flightTime = Math.max(0.35, (targetZLand - bPos.z) / returnVz);
         const deltaY = TABLE_HEIGHT - bPos.y;
         const calculatedVy = (deltaY - 0.5 * g * flightTime * flightTime) / flightTime;
-        // Ensure clean net clearance (> 3.5cm over the net tape at Z=0)
+        // Ensure clean net clearance (> 4.5cm over the net tape at Z=0)
         const tNet = Math.max(0.1, -bPos.z / returnVz);
-        const minNetClearanceY = TABLE_HEIGHT + NET_HEIGHT + BALL_RADIUS + 0.035;
+        const minNetClearanceY = TABLE_HEIGHT + NET_HEIGHT + BALL_RADIUS + 0.045;
         const minVyForNet = (minNetClearanceY - bPos.y - 0.5 * g * tNet * tNet) / tNet;
-        const returnVy = THREE.MathUtils.clamp(Math.max(calculatedVy, minVyForNet), 0.80, 1.05);
+        const returnVy = THREE.MathUtils.clamp(Math.max(calculatedVy, minVyForNet), 0.78, 1.15);
 
         // Realistic Angled Strike Physics (Linear straight-line trajectories):
         // 1. Paddle face yaw angle (in radians: positive = right, negative = left)
@@ -407,11 +409,11 @@ export class PhysicsWorld {
         const flightTime = Math.max(0.35, (targetZLand - bPos.z) / returnVz);
         const deltaY = TABLE_HEIGHT - bPos.y;
         const calculatedVy = (deltaY - 0.5 * g * flightTime * flightTime) / flightTime;
-        // Ensure clean net clearance (> 3.5cm over the net tape at Z=0)
+        // Ensure clean net clearance (> 4.5cm over the net tape at Z=0)
         const tNet = Math.max(0.1, bPos.z / Math.abs(returnVz));
-        const minNetClearanceY = TABLE_HEIGHT + NET_HEIGHT + BALL_RADIUS + 0.035;
+        const minNetClearanceY = TABLE_HEIGHT + NET_HEIGHT + BALL_RADIUS + 0.045;
         const minVyForNet = (minNetClearanceY - bPos.y - 0.5 * g * tNet * tNet) / tNet;
-        const returnVy = THREE.MathUtils.clamp(Math.max(calculatedVy, minVyForNet), 0.80, 1.05);
+        const returnVy = THREE.MathUtils.clamp(Math.max(calculatedVy, minVyForNet), 0.78, 1.15);
 
         // CPU strategic placement: aim towards targetAimX across court in straight line
         const maxCourtX = (TABLE_WIDTH / 2) * 0.88; // ~0.67m
@@ -437,18 +439,32 @@ export class PhysicsWorld {
     if (this.isInRally) {
       this.checkContinuousStrikes(p1Pos, p1Vel, p1Yaw, p2Pos, p2Vel, p2Yaw, p2AimX, p2PowerMultiplier);
 
-      // Height safety: clamp maximum ball height so it never balloons into the ceiling
+      // Height safety: prevent ballooning into ceiling while softly cresting without hard crash into net
       if (this.ballBody.position.y > 1.08 && this.ballBody.velocity.y > 0) {
-        this.ballBody.velocity.y = -0.4;
+        this.ballBody.velocity.y = Math.min(this.ballBody.velocity.y, 0.02);
       }
 
-      // Serve safety: during serve flight, ensure ball never gets stuck in the net at Z=0
-      if (this.isServeFlight && Math.abs(this.ballBody.position.z) < 0.22) {
-        if (this.ballBody.position.y < 0.95) {
-          this.ballBody.position.y = 0.98;
-          if (this.ballBody.velocity.y < 0.2) {
-            this.ballBody.velocity.y = 0.6;
+      // Net clearance safety: when approaching net, ensure ball cleanly clears net tape at Z=0
+      const isApproachingNet = (this.ballBody.velocity.z > 0 && this.ballBody.position.z >= -0.22 && this.ballBody.position.z <= 0.03) ||
+                               (this.ballBody.velocity.z < 0 && this.ballBody.position.z <= 0.22 && this.ballBody.position.z >= -0.03);
+      if (isApproachingNet) {
+        if (this.isSmashFlight || this.isServeFlight) {
+          if (this.ballBody.position.y < 0.962) {
+            this.ballBody.position.y = 0.965;
+            if (this.ballBody.velocity.y < 0) {
+              this.ballBody.velocity.y = 0.08;
+            }
           }
+        }
+      }
+
+      // Topspin dive after clearing net on a smash (pull ball down sharply onto opponent's table)
+      if (this.isSmashFlight) {
+        const isPastNet = (this.ballBody.velocity.z > 0 && this.ballBody.position.z > 0.04) ||
+                          (this.ballBody.velocity.z < 0 && this.ballBody.position.z < -0.04);
+        if (isPastNet && this.ballBody.position.y > TABLE_HEIGHT + 0.02) {
+          // Accelerate downward dive onto opponent table
+          this.ballBody.velocity.y -= 0.12;
         }
       }
 
@@ -466,6 +482,7 @@ export class PhysicsWorld {
   serveBall(server = 1, options = {}) {
     this.isInRally = true;
     this.isServeFlight = true;
+    this.isSmashFlight = false;
     this.ballBody.type = CANNON.Body.DYNAMIC;
     this.ballBody.collisionResponse = true;
 
@@ -486,15 +503,16 @@ export class PhysicsWorld {
       this.ballBody.angularVelocity.set(0, 0, 0);
     }
 
-    // Reset collision debounces (table debounce reset to 0 so the initial table bounce is never blocked)
+    // Reset collision debounces (table debounce reset to -1000 so the initial table bounce is never blocked)
     this.lastPaddleHitTime = performance.now();
-    this.lastTableBounceTime = 0;
+    this.lastTableBounceTime = -1000;
   }
 
   holdBallForServe(server = 1, paddlePos = null) {
     this.isInRally = false;
     this.isServeFlight = false;
-    this.lastTableBounceTime = 0;
+    this.isSmashFlight = false;
+    this.lastTableBounceTime = -1000;
     this.ballBody.type = CANNON.Body.KINEMATIC;
     this.ballBody.collisionResponse = false;
     this.ballBody.velocity.set(0, 0, 0);
@@ -510,11 +528,43 @@ export class PhysicsWorld {
   }
 
   smashBall(player) {
-    const dirZ = player === 1 ? 4.6 : -4.6;
-    // Smashes drive flat, fast, and aggressively into the opponent's table half
-    const clampedVx = THREE.MathUtils.clamp(this.ballBody.velocity.x * 0.25, -0.5, 0.5);
-    this.ballBody.velocity.set(clampedVx, 0.20, dirZ);
-    // Heavy topspin drives the ball down onto the table
-    this.ballBody.angularVelocity.set(player === 1 ? 8.0 : -8.0, 0, 0);
+    this.isSmashFlight = true;
+    const bPos = this.ballBody.position;
+    const g = -3.8;
+    const dir = player === 1 ? 1 : -1;
+
+    // Fast, crisp smash pace (4.8 m/s forward velocity)
+    const smashVz = dir * 4.8;
+
+    // Target landing point: deep on opponent table half (z = ±0.88m)
+    const targetZLand = dir * 0.88;
+    const distToNet = Math.max(0.15, Math.abs(bPos.z));
+    const distToLand = Math.max(0.35, Math.abs(targetZLand - bPos.z));
+
+    const tNet = distToNet / 4.8;
+    const tLand = distToLand / 4.8;
+
+    // Net tape is at Y = TABLE_HEIGHT + NET_HEIGHT = 0.9125m.
+    // With ball radius 0.035m, ball center must be >= 0.9475m to clear tape.
+    // Target clean clearance of 6.5cm over net tape: Y = 0.978m
+    const targetNetY = 0.978;
+
+    // Calculate required upward velocity to ensure net clearance:
+    // y(tNet) = y0 + vy * tNet + 0.5 * g * tNet^2 = targetNetY
+    const minVyForNet = (targetNetY - bPos.y - 0.5 * g * tNet * tNet) / tNet;
+
+    // Table landing target (Y = TABLE_HEIGHT = 0.76m):
+    const vyForLand = (TABLE_HEIGHT - bPos.y - 0.5 * g * tLand * tLand) / tLand;
+
+    // Smoothly blend vy to clear net while keeping max apex height < 1.08m
+    const smashVy = THREE.MathUtils.clamp(Math.max(minVyForNet, vyForLand), 0.55, 1.05);
+
+    // Lateral direction: direct forward with clamped horizontal drift
+    const clampedVx = THREE.MathUtils.clamp(this.ballBody.velocity.x * 0.20, -0.45, 0.45);
+
+    this.ballBody.velocity.set(clampedVx, smashVy, smashVz);
+
+    // Topspin rotation around X axis (zero sidespin around Y axis)
+    this.ballBody.angularVelocity.set(dir * 8.0, 0, 0);
   }
 }

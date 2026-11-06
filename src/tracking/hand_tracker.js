@@ -435,30 +435,85 @@ export class HandTracker {
 
     this.startPromise = (async () => {
       try {
+        // Clean up any stale media tracks before requesting a fresh stream
+        if (this.mediaStream) {
+          try {
+            this.mediaStream.getTracks().forEach((track) => track.stop());
+          } catch (e) {}
+          this.mediaStream = null;
+        }
+
         if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
           const isLocalhost = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
           const isHttps = window.location.protocol === 'https:';
           const err = new Error(
             !isLocalhost && !isHttps
-              ? 'Webcam requires HTTPS or localhost.'
-              : 'Webcam API not supported in this browser.'
+              ? 'Webcam requires HTTPS or http://localhost. Please open via http://localhost:5173'
+              : 'Webcam API is not supported in this browser.'
           );
           err.name = 'InsecureContextError';
           throw err;
         }
 
-        // 1. Request webcam access directly via native Web API.
-        // Downscale camera stream request to 480x360 instead of native high resolution
-        const constraints = {
-          audio: false,
-          video: {
-            width: { ideal: 480 },
-            height: { ideal: 360 },
-            facingMode: 'user',
-          },
-        };
+        // Check if camera permission is explicitly blocked
+        if (navigator.permissions && navigator.permissions.query) {
+          try {
+            const pStatus = await navigator.permissions.query({ name: 'camera' });
+            if (pStatus && pStatus.state === 'denied') {
+              const permErr = new Error('Camera permission denied by browser. Click the camera/lock icon in your address bar to allow camera access, then click Retry.');
+              permErr.name = 'NotAllowedError';
+              throw permErr;
+            }
+          } catch (pErr) {
+            if (pErr.name === 'NotAllowedError') throw pErr;
+          }
+        }
 
-        const stream = await navigator.mediaDevices.getUserMedia(constraints);
+        // Check if any video hardware exists
+        if (navigator.mediaDevices.enumerateDevices) {
+          try {
+            const devices = await navigator.mediaDevices.enumerateDevices();
+            const hasVideo = devices.some((d) => d.kind === 'videoinput');
+            if (devices.length > 0 && !hasVideo) {
+              const noCamErr = new Error('No webcam detected. Connect a camera or click "Use Mouse Instead".');
+              noCamErr.name = 'NotFoundError';
+              throw noCamErr;
+            }
+          } catch (e) {}
+        }
+
+        // Progressive constraints fallback:
+        // Tier 1: Ideal 640x480 user-facing
+        // Tier 2: User-facing simple
+        // Tier 3: Ideal 640x480 any
+        // Tier 4: Most compatible { video: true, audio: false }
+        const constraintTiers = [
+          { audio: false, video: { width: { ideal: 640 }, height: { ideal: 480 }, facingMode: 'user' } },
+          { audio: false, video: { facingMode: 'user' } },
+          { audio: false, video: { width: { ideal: 640 }, height: { ideal: 480 } } },
+          { audio: false, video: true },
+        ];
+
+        let stream = null;
+        let lastErrorCaptured = null;
+
+        for (const constraints of constraintTiers) {
+          try {
+            stream = await navigator.mediaDevices.getUserMedia(constraints);
+            if (stream) break;
+          } catch (tierErr) {
+            lastErrorCaptured = tierErr;
+            // Stop immediately if user explicitly denied permission
+            if (tierErr.name === 'NotAllowedError' || tierErr.name === 'PermissionDeniedError') {
+              throw tierErr;
+            }
+          }
+        }
+
+        if (!stream) {
+          throw lastErrorCaptured || new Error('Could not start any video source.');
+        }
+
         this.mediaStream = stream;
 
         if (this.videoElement) {
@@ -467,10 +522,14 @@ export class HandTracker {
           this.videoElement.setAttribute('playsinline', '');
           this.videoElement.setAttribute('autoplay', '');
 
-          await new Promise((resolve) => {
-            if (this.videoElement.readyState >= 2) {
-              resolve();
-            } else {
+          try {
+            await this.videoElement.play();
+          } catch (e) {
+            console.warn('Video play immediate start notice:', e);
+          }
+
+          if (this.videoElement.readyState < 2) {
+            await new Promise((resolve) => {
               let resolved = false;
               const onReady = () => {
                 if (!resolved) {
@@ -480,14 +539,8 @@ export class HandTracker {
               };
               this.videoElement.onloadedmetadata = onReady;
               this.videoElement.onloadeddata = onReady;
-              setTimeout(onReady, 1200);
-            }
-          });
-
-          try {
-            await this.videoElement.play();
-          } catch (e) {
-            console.warn('Video play warning:', e);
+              setTimeout(onReady, 800);
+            });
           }
         }
 
@@ -506,7 +559,7 @@ export class HandTracker {
               if (file.includes('face')) {
                 return `https://cdn.jsdelivr.net/npm/@mediapipe/face_detection/${file}`;
               }
-              return `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`;
+              return `https://cdn.jsdelivr.net/npm/@mediapipe/hands@0.4.1675469240/${file}`;
             },
           });
 
@@ -525,6 +578,7 @@ export class HandTracker {
         this.controlMode = 'webcam';
         this.isCalibrated = false;
         this.autoCalibrateTimer = 0;
+        this.lastError = null;
 
         // 3. Start high-performance frame processing loop
         this.startProcessingLoop();
@@ -538,23 +592,23 @@ export class HandTracker {
         this.controlMode = 'mouse';
 
         let errType = 'unknown';
-        let userMessage = 'Webcam unavailable. Mouse controls active.';
+        let userMessage = err.message || 'Webcam unavailable. Mouse controls active.';
 
         if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
           errType = 'not_allowed';
-          userMessage = 'Camera permission denied. Mouse controls active.';
+          userMessage = 'Camera permission denied. Click the lock or camera icon in your address bar to Allow camera, then click Retry.';
         } else if (err.name === 'NotFoundError' || err.name === 'DevicesNotFoundError') {
           errType = 'not_found';
-          userMessage = 'No webcam detected. Mouse controls active.';
+          userMessage = 'No webcam detected. Connect a camera or click "Use Mouse Instead".';
         } else if (err.name === 'NotReadableError' || err.name === 'TrackStartError') {
           errType = 'not_readable';
-          userMessage = 'Webcam in use by another app. Mouse controls active.';
+          userMessage = 'Camera in use by another app (Zoom/FaceTime/Teams). Close other apps and click Retry.';
         } else if (err.name === 'InsecureContextError') {
           errType = 'insecure';
-          userMessage = 'Webcam requires HTTPS or localhost.';
+          userMessage = 'Camera requires HTTPS or http://localhost. Please open http://localhost:5173';
         } else if (err.name === 'ModelLoadError') {
           errType = 'model_failed';
-          userMessage = 'Vision model failed to load. Mouse controls active.';
+          userMessage = 'Vision model failed to load. Check internet connection and click Retry.';
         }
 
         this.lastError = { type: errType, message: userMessage, original: err };
@@ -619,22 +673,12 @@ export class HandTracker {
         }
       }
 
-      if (this.isTracking && this.videoElement) {
-        if ('requestVideoFrameCallback' in this.videoElement) {
-          this.frameCallbackId = this.videoElement.requestVideoFrameCallback(processFrame);
-        } else {
-          this.frameAnimId = requestAnimationFrame(processFrame);
-        }
+      if (this.isTracking) {
+        this.frameAnimId = requestAnimationFrame(processFrame);
       }
     };
 
-    if (this.videoElement) {
-      if ('requestVideoFrameCallback' in this.videoElement) {
-        this.frameCallbackId = this.videoElement.requestVideoFrameCallback(processFrame);
-      } else {
-        this.frameAnimId = requestAnimationFrame(processFrame);
-      }
-    }
+    this.frameAnimId = requestAnimationFrame(processFrame);
   }
 
   stopProcessingLoop() {
@@ -688,6 +732,18 @@ export class HandTracker {
     this.controlMode = 'mouse';
     this.handDetected = false;
     this.onStatusChange({ status: 'stopped', message: 'Mouse Controls Active' });
+  }
+
+  /**
+   * Detects the Calibration Hand Sign (🤟):
+   * - Thumb: EXTENDED outward from palm
+   * - Index finger: EXTENDED
+   * - Pinky finger: EXTENDED
+   * - Middle finger: CURLED / FOLDED into palm
+   * - Ring finger: CURLED / FOLDED into palm
+   */
+  isCalibrationGesture(landmarks) {
+    return this.isSpidermanSign(landmarks);
   }
 
   /**
@@ -816,10 +872,22 @@ export class HandTracker {
       );
 
       this.lastRawHand = { x: userX, y: userY, depth: userDepth, yaw: rawYaw };
+      this.currentDepth = userDepth;
 
-      // Spider-Man (🤟) Gesture Detection & Calibration
-      const isSpiderman = this.isSpidermanSign(landmarks);
-      this.isSpidermanActive = isSpiderman;
+      // Distance zone evaluation based on normalized hand scale in camera frame
+      if (userDepth < 0.085) {
+        this.handDistanceZone = 'too_far';
+      } else if (userDepth > 0.31) {
+        this.handDistanceZone = 'too_close';
+      } else {
+        this.handDistanceZone = 'optimal';
+      }
+
+      // Calibration Gesture (🤟) Detection & Calibration
+      const isCalibGesture = this.isCalibrationGesture(landmarks);
+      this.isCalibrationGestureActive = isCalibGesture;
+      this.isSpidermanActive = isCalibGesture;
+      const isSpiderman = isCalibGesture;
 
       if (this.gestureCalibratedFlashTimer > 0) {
         this.gestureCalibratedFlashTimer = Math.max(0, this.gestureCalibratedFlashTimer - dt);
@@ -959,7 +1027,7 @@ export class HandTracker {
         dz: targetZ.toFixed(2),
         yaw: `${Math.round((-deltaYaw * 180) / Math.PI)}°`,
         direction: dirStr.trim(),
-        hand: isSpiderman ? '🤟 SPIDER-MAN' : (this.isHandOpen ? 'OPEN' : 'GRIP'),
+        hand: isSpiderman ? '🤟 CALIBRATE' : (this.isHandOpen ? 'OPEN' : 'GRIP'),
       };
       this.onCalibrationUpdate({ status: 'tracking', readout: this.relativeReadout });
     } else {
@@ -967,6 +1035,7 @@ export class HandTracker {
       if (now - this.lastDetectedTime > 350) {
         this.handDetected = false;
         this.latestLandmarks = null;
+        this.isCalibrationGestureActive = false;
         this.isSpidermanActive = false;
         this.spidermanGestureTimer = 0;
         this.spidermanGestureProgress = 0;
@@ -982,7 +1051,7 @@ export class HandTracker {
     const refX = (1.0 - this.neutralHand.x) * w;
     const refY = (1.0 - this.neutralHand.y) * h;
 
-    ctx.strokeStyle = 'rgba(0, 221, 255, 0.35)';
+    ctx.strokeStyle = 'rgba(212, 160, 60, 0.35)';
     ctx.lineWidth = 1;
     ctx.setLineDash([4, 4]);
 
@@ -997,19 +1066,19 @@ export class HandTracker {
     ctx.stroke();
     ctx.setLineDash([]);
 
-    ctx.strokeStyle = this.isCalibrated ? '#00ddff' : '#ffaa00';
+    ctx.strokeStyle = this.isCalibrated ? '#e8b84e' : '#d4a03c';
     ctx.lineWidth = 2;
     ctx.beginPath();
     ctx.arc(refX, refY, 20, 0, Math.PI * 2);
     ctx.stroke();
 
-    // Spider-Man color theme when gesture is charging or active
+    // Dark luxury metallic amber theme when gesture is charging or active
     if (isSpiderman || this.spidermanGestureProgress > 0) {
-      ctx.strokeStyle = '#ff0055';
-      ctx.fillStyle = '#ff2a6d';
+      ctx.strokeStyle = '#e8b84e';
+      ctx.fillStyle = '#d4a03c';
     } else {
-      ctx.strokeStyle = this.isHandOpen ? '#ffea00' : '#00ff88';
-      ctx.fillStyle = '#00ddff';
+      ctx.strokeStyle = this.isHandOpen ? '#e8b84e' : 'rgba(212, 160, 60, 0.7)';
+      ctx.fillStyle = 'rgba(212, 160, 60, 0.85)';
     }
     ctx.lineWidth = (isSpiderman || this.spidermanGestureProgress > 0) ? 3.0 : 2.5;
 
@@ -1045,33 +1114,33 @@ export class HandTracker {
 
     if (this.gestureCalibratedFlashTimer > 0) {
       ctx.save();
-      ctx.strokeStyle = '#00ff88';
+      ctx.strokeStyle = '#e8b84e';
       ctx.lineWidth = 3;
       ctx.beginPath();
       ctx.arc(cx, cy, 26, 0, Math.PI * 2);
       ctx.stroke();
-      ctx.fillStyle = 'rgba(0, 255, 136, 0.25)';
+      ctx.fillStyle = 'rgba(212, 160, 60, 0.25)';
       ctx.fill();
 
       ctx.font = 'bold 12px system-ui, sans-serif';
-      ctx.fillStyle = '#00ff88';
+      ctx.fillStyle = '#e8b84e';
       ctx.textAlign = 'center';
-      ctx.shadowColor = 'rgba(0, 255, 136, 0.9)';
+      ctx.shadowColor = 'rgba(212, 160, 60, 0.9)';
       ctx.shadowBlur = 8;
-      ctx.fillText('🤟 CALIBRATED ✓', cx, cy - 32);
+      ctx.fillText('LOCKED ✓', cx, cy - 32);
       ctx.restore();
     } else if (this.spidermanGestureProgress > 0) {
       const radius = 26;
       ctx.save();
       // Background arc track
-      ctx.strokeStyle = 'rgba(255, 0, 80, 0.35)';
+      ctx.strokeStyle = 'rgba(212, 160, 60, 0.25)';
       ctx.lineWidth = 4;
       ctx.beginPath();
       ctx.arc(cx, cy, radius, 0, Math.PI * 2);
       ctx.stroke();
 
       // Progress arc
-      ctx.strokeStyle = '#ff0055';
+      ctx.strokeStyle = '#e8b84e';
       ctx.lineWidth = 4.5;
       ctx.beginPath();
       ctx.arc(cx, cy, radius, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * this.spidermanGestureProgress);
@@ -1079,11 +1148,11 @@ export class HandTracker {
 
       // Text badge
       ctx.font = 'bold 11px system-ui, sans-serif';
-      ctx.fillStyle = '#ff2a6d';
+      ctx.fillStyle = '#e8b84e';
       ctx.textAlign = 'center';
-      ctx.shadowColor = 'rgba(255, 42, 109, 0.9)';
+      ctx.shadowColor = 'rgba(212, 160, 60, 0.9)';
       ctx.shadowBlur = 8;
-      ctx.fillText(`🤟 CALIBRATING ${Math.round(this.spidermanGestureProgress * 100)}%`, cx, cy - 32);
+      ctx.fillText(`LOCKING ${Math.round(this.spidermanGestureProgress * 100)}%`, cx, cy - 32);
       ctx.restore();
     }
     ctx.restore();

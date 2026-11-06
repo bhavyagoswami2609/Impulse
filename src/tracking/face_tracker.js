@@ -273,22 +273,12 @@ export class FaceTracker {
         }
       }
 
-      if (this.enabled && this.isTracking && this.videoElement) {
-        if ('requestVideoFrameCallback' in this.videoElement) {
-          this.frameCallbackId = this.videoElement.requestVideoFrameCallback(processFrame);
-        } else {
-          this.frameAnimId = requestAnimationFrame(processFrame);
-        }
+      if (this.enabled && this.isTracking) {
+        this.frameAnimId = requestAnimationFrame(processFrame);
       }
     };
 
-    if (this.videoElement) {
-      if ('requestVideoFrameCallback' in this.videoElement) {
-        this.frameCallbackId = this.videoElement.requestVideoFrameCallback(processFrame);
-      } else {
-        this.frameAnimId = requestAnimationFrame(processFrame);
-      }
-    }
+    this.frameAnimId = requestAnimationFrame(processFrame);
   }
 
   stopProcessingLoop() {

@@ -203,9 +203,9 @@ export class AirHockeyPhysics {
     this.isSleeping = false;
 
     if (serverPlayerId === 2) {
-      this.puckPos = { x: 0, z: 0.78 };
+      this.puckPos = { x: 0, z: 0.45 };
     } else {
-      this.puckPos = { x: 0, z: -0.78 };
+      this.puckPos = { x: 0, z: -0.45 };
     }
   }
 
@@ -227,7 +227,7 @@ export class AirHockeyPhysics {
     if (options.position) {
       this.puckPos = { x: options.position.x, z: options.position.z };
     } else {
-      const zOffset = serverPlayerId === 2 ? 0.78 : -0.78;
+      const zOffset = serverPlayerId === 2 ? 0.45 : -0.45;
       this.puckPos = { x: 0, z: zOffset };
     }
 

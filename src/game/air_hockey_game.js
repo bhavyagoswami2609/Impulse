@@ -138,6 +138,13 @@ export class AirHockeyGame {
   handleGoal(scorerId) {
     if (this.state === AIR_HOCKEY_STATES.MATCH_OVER) return;
 
+    // Safety rule: during SERVE_WAIT, entering own goal is a foul / dead serve, NOT an opponent goal!
+    if (this.state === AIR_HOCKEY_STATES.SERVE_WAIT) {
+      this.resetPuckForServe(this.server);
+      this.onActionToast('INVALID SERVE - RE-SERVE');
+      return;
+    }
+
     this.state = AIR_HOCKEY_STATES.GOAL_SCORED;
     this.scores[scorerId - 1]++;
 
@@ -179,9 +186,32 @@ export class AirHockeyGame {
     this.aiServeTimer = 0.85;
     this.aiSwingTimer = 0;
 
-    // Reset puck inside the serving player's half stationary (closer to goal post)
+    // Reset puck inside the serving player's half stationary in front of the striking player's striker
     this.physics.resetPuck(server);
-    this.physics.setPuckPosition(0, server === 1 ? -0.78 : 0.78);
+
+    const gap = 0.20; // 20cm center-to-center (~11.2cm clearance between striker and puck edges)
+    let puckX = 0;
+    let puckZ = 0;
+
+    if (server === 1) {
+      // In front of P1's striker (+Z direction towards midline)
+      puckX = THREE.MathUtils.clamp(this.p1Pos.x, -0.25, 0.25);
+      if (this.p1Pos.z > -0.55) {
+        this.p1Pos.z = -0.65;
+        this.p1PrevPos.copy(this.p1Pos);
+      }
+      puckZ = THREE.MathUtils.clamp(this.p1Pos.z + gap, -0.55, -0.25);
+    } else {
+      // In front of P2's striker (-Z direction towards midline)
+      puckX = THREE.MathUtils.clamp(this.p2Pos.x, -0.25, 0.25);
+      if (this.p2Pos.z < 0.55) {
+        this.p2Pos.z = 0.65;
+        this.p2PrevPos.copy(this.p2Pos);
+      }
+      puckZ = THREE.MathUtils.clamp(this.p2Pos.z - gap, 0.25, 0.55);
+    }
+
+    this.physics.setPuckPosition(puckX, puckZ);
     this.physics.setPuckVelocity(0, 0);
     this.physics.setPuckSpin(0);
 
@@ -224,6 +254,12 @@ export class AirHockeyGame {
   restartMatch() {
     this.scores = [0, 0];
     this.server = 1;
+    this.p1Pos.set(0, AIR_HOCKEY_TABLE_HEIGHT, -0.65);
+    this.p1PrevPos.copy(this.p1Pos);
+    this.p1Vel.set(0, 0, 0);
+    this.p2Pos.set(0, AIR_HOCKEY_TABLE_HEIGHT, 0.65);
+    this.p2PrevPos.copy(this.p2Pos);
+    this.p2Vel.set(0, 0, 0);
     this.resetPuckForServe(1);
     this.onScoreUpdate(this.scores);
     this.onActionToast('AIR HOCKEY MATCH START');
@@ -257,12 +293,12 @@ export class AirHockeyGame {
     if (this.state === AIR_HOCKEY_STATES.SERVE_WAIT && this.server === 2) {
       this.aiServeTimer -= dt;
       if (this.aiServeTimer <= 0) {
-        // Drive forward through puck to physically strike it
-        const strikeOffset = 0.62 - 0.05 * ((config.strikePower || 1.0) - 1.0);
+        // Drive forward through puck (at Z ~ 0.45m) to physically strike it
+        const strikeOffset = Math.max(this.p2Bounds.minZ, 0.25 - 0.05 * ((config.strikePower || 1.0) - 1.0));
         this.aiTargetPos.set(0, AIR_HOCKEY_TABLE_HEIGHT, strikeOffset);
       } else {
         // Line up behind puck ready to strike
-        this.aiTargetPos.set(0, AIR_HOCKEY_TABLE_HEIGHT, 0.92);
+        this.aiTargetPos.set(0, AIR_HOCKEY_TABLE_HEIGHT, 0.65);
       }
     } else if (this.state === AIR_HOCKEY_STATES.ACTIVE_PLAY) {
       // 2. Active Play Flow
@@ -382,6 +418,28 @@ export class AirHockeyGame {
         this.physics.step(dt, this.p1Pos, this.p1Vel, this.p2Pos, this.p2Vel);
       }
 
+      // Safety guard during SERVE_WAIT: prevent puck from getting trapped behind server striker
+      if (this.state === AIR_HOCKEY_STATES.SERVE_WAIT) {
+        const puck = this.physics.getPuckState();
+        if (this.server === 1) {
+          if (puck.position.z <= this.p1Pos.z + 0.09) {
+            this.physics.setPuckPosition(
+              THREE.MathUtils.clamp(this.p1Pos.x, -0.25, 0.25),
+              THREE.MathUtils.clamp(this.p1Pos.z + 0.20, -0.55, -0.25)
+            );
+            this.physics.setPuckVelocity(0, 0);
+          }
+        } else if (this.server === 2) {
+          if (puck.position.z >= this.p2Pos.z - 0.09) {
+            this.physics.setPuckPosition(
+              THREE.MathUtils.clamp(this.p2Pos.x, -0.25, 0.25),
+              THREE.MathUtils.clamp(this.p2Pos.z - 0.20, 0.25, 0.55)
+            );
+            this.physics.setPuckVelocity(0, 0);
+          }
+        }
+      }
+
       const puckState = this.physics.getPuckState();
 
       // 4. Update Three.js Scene Meshes
@@ -499,8 +557,35 @@ export class AirHockeyGame {
 
     if (packet instanceof Float32Array) {
       const tag = packet[0];
+
+      // Standard 32-byte (8 float) binary packet handling
+      if (packet.length === 8) {
+        if (tag === 1.0) { // POSITION_STATE
+          if (this.multiplayer.role === 'client') {
+            this.clientPuckTarget.set(packet[4], AIR_HOCKEY_TABLE_HEIGHT + 0.0038, packet[5]);
+            this.remoteTargetPos.set(packet[1], AIR_HOCKEY_TABLE_HEIGHT, packet[3]);
+          } else if (this.multiplayer.role === 'host') {
+            this.remoteTargetPos.set(packet[1], AIR_HOCKEY_TABLE_HEIGHT, packet[3]);
+            this.hasRemoteInput = true;
+          }
+        } else if (tag === 2.0) { // SCORE_UPDATE
+          this.scores = [packet[1], packet[2]];
+          this.server = packet[3];
+          const stateCode = packet[4];
+          this.state = stateCode === 0 ? AIR_HOCKEY_STATES.SERVE_WAIT : (stateCode === 1 ? AIR_HOCKEY_STATES.ACTIVE_PLAY : AIR_HOCKEY_STATES.MATCH_OVER);
+          this.onScoreUpdate(this.scores);
+          this.onStateChange(this.state);
+        } else if (tag === 3.0) { // COLLISION_EVENT
+          sound.playStrikerHit(1.0);
+          if (this.scene && this.scene.triggerImpact) {
+            this.scene.triggerImpact(new THREE.Vector3(packet[2], packet[3], packet[4]), 0xd4a03c);
+          }
+        }
+        return;
+      }
+
       if (tag === 3.0 && this.multiplayer.role === 'client') {
-        // TAG_HOCKEY_SYNC
+        // TAG_HOCKEY_SYNC (15 floats)
         this.clientPuckTarget.set(packet[1], AIR_HOCKEY_TABLE_HEIGHT + 0.0038, packet[2]);
         if (!this.isPredictingHit || packet[4] < 0) {
           this.predictedPuckVel.set(packet[3], 0, packet[4]);
@@ -518,7 +603,7 @@ export class AirHockeyGame {
         this.onScoreUpdate(this.scores);
         this.onStateChange(this.state);
       } else if (tag === 4.0 && this.multiplayer.role === 'host') {
-        // TAG_HOCKEY_CLIENT_INPUT
+        // TAG_HOCKEY_CLIENT_INPUT (6 floats)
         this.remoteTargetPos.set(packet[1], AIR_HOCKEY_TABLE_HEIGHT, packet[2]);
         this.remoteTargetVel.set(packet[3], 0, packet[4]);
         this.hasRemoteInput = true;

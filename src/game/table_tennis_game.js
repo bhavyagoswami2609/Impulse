@@ -977,8 +977,40 @@ export class TableTennisGame {
 
     if (packet instanceof Float32Array) {
       const tag = packet[0];
+
+      // Standard 32-byte (8 float) binary packet handling
+      if (packet.length === 8) {
+        if (tag === 1.0) { // POSITION_STATE
+          if (this.multiplayer.role === 'client') {
+            this.remoteTargetPos.set(packet[1], packet[2], packet[3]);
+            this.clientBallTarget.set(packet[4], packet[5], packet[6]);
+          } else if (this.multiplayer.role === 'host') {
+            this.remoteTargetPos.set(packet[1], packet[2], packet[3]);
+            this.hasRemoteInput = true;
+          }
+        } else if (tag === 2.0) { // SCORE_UPDATE
+          this.scores = [packet[1], packet[2]];
+          this.server = packet[3];
+          const stateCode = packet[4];
+          this.state = stateCode === 0 ? GAME_STATES.SERVE_WAIT : (stateCode === 1 ? GAME_STATES.RALLY : GAME_STATES.MATCH_OVER);
+          this.onScoreUpdate(this.scores);
+          this.onStateChange(this.state);
+        } else if (tag === 3.0) { // COLLISION_EVENT
+          const colType = packet[1];
+          const impactPos = new THREE.Vector3(packet[2], packet[3], packet[4]);
+          if (colType === 1.0) {
+            sound.playPaddleHit(0.8, false);
+            if (this.scene && this.scene.triggerImpact) this.scene.triggerImpact(impactPos, 0xd4a03c);
+          } else if (colType === 2.0) {
+            sound.playTableBounce(0.8);
+            if (this.scene && this.scene.triggerImpact) this.scene.triggerImpact(impactPos, 0x00ff88);
+          }
+        }
+        return;
+      }
+
       if (tag === 1.0 && this.multiplayer.role === 'client') {
-        // TAG_TT_SYNC
+        // TAG_TT_SYNC (22 floats)
         this.clientBallTarget.set(packet[1], packet[2], packet[3]);
         if (!this.isPredictingHit || packet[6] < 0) {
           this.predictedBallVel.set(packet[4], packet[5], packet[6]);
@@ -998,7 +1030,7 @@ export class TableTennisGame {
         this.onScoreUpdate(this.scores);
         this.onStateChange(this.state);
       } else if (tag === 2.0 && this.multiplayer.role === 'host') {
-        // TAG_TT_CLIENT_INPUT
+        // TAG_TT_CLIENT_INPUT (13 floats)
         this.remoteTargetPos.set(packet[1], packet[2], packet[3]);
         this.remoteTargetRot.set(packet[4], packet[5], packet[6], packet[7]);
         this.remoteTargetVel.set(packet[8], packet[9], packet[10]);

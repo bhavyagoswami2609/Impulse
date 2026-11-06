@@ -23,30 +23,52 @@ export class TableTennisScene {
     this.container = canvasContainer;
 
     // 1. Renderer - cap pixel ratio to 1.5 to reduce fragment shader & GPU fillrate overhead
-    this.renderer = new THREE.WebGLRenderer({
-      antialias: true,
-      powerPreference: 'high-performance',
-      alpha: false,
-    });
-    this.renderer.setSize(window.innerWidth, window.innerHeight);
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
-    this.renderer.shadowMap.enabled = true;
-    this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-    // Disable real-time shadow map updates every frame on dynamic meshes
-    this.renderer.shadowMap.autoUpdate = false;
-    this.renderer.shadowMap.needsUpdate = true;
-    this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    this.renderer.toneMappingExposure = 1.15;
-    this.container.appendChild(this.renderer.domElement);
+    try {
+      this.renderer = new THREE.WebGLRenderer({
+        antialias: true,
+        powerPreference: 'high-performance',
+        alpha: false,
+      });
+      this.renderer.setSize(window.innerWidth, window.innerHeight);
+      this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
+      this.renderer.shadowMap.enabled = true;
+      this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+      // Disable real-time shadow map updates every frame on dynamic meshes
+      this.renderer.shadowMap.autoUpdate = false;
+      this.renderer.shadowMap.needsUpdate = true;
+      this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
+      this.renderer.toneMappingExposure = 1.15;
+      if (this.container) {
+        this.container.appendChild(this.renderer.domElement);
+      }
+    } catch (err) {
+      console.warn('WebGLRenderer creation fallback:', err);
+      const canvas = document.createElement('canvas');
+      if (this.container) this.container.appendChild(canvas);
+      this.renderer = {
+        domElement: canvas,
+        setSize: () => {},
+        setPixelRatio: () => {},
+        render: () => {},
+        shadowMap: { enabled: false, autoUpdate: false, needsUpdate: false },
+        toneMapping: 0,
+        toneMappingExposure: 1.0,
+      };
+    }
 
-    // 2. Scene
+    // 2. Scene - Warm near-black dark luxury foundation
     this.scene = new THREE.Scene();
-    this.scene.background = new THREE.Color(0x0c141c);
-    this.scene.fog = new THREE.FogExp2(0x0c141c, 0.032);
+    this.scene.background = new THREE.Color(0x0a0907);
+    this.scene.fog = new THREE.FogExp2(0x0a0907, 0.026);
 
     // 3. Cameras
     const aspect = window.innerWidth / window.innerHeight;
     this.camera = new THREE.PerspectiveCamera(52, aspect, 0.1, 100);
+
+    // Idle camera orbit around the active table during menu showcase
+    this.isOrbiting = true;
+    this.orbitAngle = 0;
+    this.orbitSpeed = 0.22;
 
     // Camera view presets
     this.views = {
@@ -116,7 +138,7 @@ export class TableTennisScene {
     // 8. High-contrast Landing Target Ring & Vertical Drop-Line on table surface
     const landingRingGeo = new THREE.RingGeometry(0.038, 0.075, 32);
     const landingRingMat = new THREE.MeshBasicMaterial({
-      color: 0x00ffcc,
+      color: 0xd4a03c,
       transparent: true,
       opacity: 0,
       side: THREE.DoubleSide,
@@ -131,7 +153,7 @@ export class TableTennisScene {
     const dropLineGeo = new THREE.BufferGeometry();
     dropLineGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array([0, 0, 0, 0, 1, 0]), 3));
     const dropLineMat = new THREE.LineBasicMaterial({
-      color: 0x00ffcc,
+      color: 0xe8b84e,
       transparent: true,
       opacity: 0.65,
       linewidth: 2,
@@ -169,10 +191,10 @@ export class TableTennisScene {
   }
 
   setupLighting() {
-    const ambientLight = new THREE.AmbientLight(0xd4e2f5, 0.7);
+    const ambientLight = new THREE.AmbientLight(0xffeed6, 0.65);
     this.scene.add(ambientLight);
 
-    const keyLight = new THREE.DirectionalLight(0xffffff, 1.5);
+    const keyLight = new THREE.DirectionalLight(0xfff8ee, 1.55);
     keyLight.position.set(1.5, 6.0, -1.0);
     keyLight.castShadow = true;
     keyLight.shadow.mapSize.width = 2048;
@@ -186,11 +208,17 @@ export class TableTennisScene {
     keyLight.shadow.bias = -0.0005;
     this.scene.add(keyLight);
 
-    const fillLight = new THREE.DirectionalLight(0xa5c4e8, 0.85);
+    // Warm metallic amber fill accent
+    const fillLight = new THREE.DirectionalLight(0xd4a03c, 0.55);
     fillLight.position.set(-2.0, 5.0, 3.0);
     this.scene.add(fillLight);
 
-    const tableSpot = new THREE.SpotLight(0xfff5e6, 1.8, 12, Math.PI / 4, 0.4, 1.2);
+    // Subtle arena rim light for tiered grandstand depth
+    const arenaRimLight = new THREE.DirectionalLight(0x2a3545, 0.35);
+    arenaRimLight.position.set(0, 8.0, -8.0);
+    this.scene.add(arenaRimLight);
+
+    const tableSpot = new THREE.SpotLight(0xfff2dc, 2.2, 12, Math.PI / 4, 0.45, 1.2);
     tableSpot.position.set(0, 5.2, 0);
     tableSpot.target.position.set(0, TABLE_HEIGHT, 0);
     this.scene.add(tableSpot);
@@ -206,10 +234,10 @@ export class TableTennisScene {
 
     for (let i = 0; i < this.maxTrailPoints; i++) {
       const t = i / this.maxTrailPoints;
-      // Vibrant glowing neon orange gradient from bright yellow-orange to deep orange
-      colors[i * 3 + 0] = 1.0;
-      colors[i * 3 + 1] = 0.85 * (1.0 - t * 0.65);
-      colors[i * 3 + 2] = 0.25 * (1.0 - t);
+      // Flowing metallic amber gold comet trail: champagne gold -> rich amber -> deep bronze
+      colors[i * 3 + 0] = 1.0 - t * 0.45;
+      colors[i * 3 + 1] = 0.88 * (1.0 - t * 0.40);
+      colors[i * 3 + 2] = 0.28 * (1.0 - t * 0.85);
     }
 
     this.trailGeometry = new THREE.BufferGeometry();
@@ -231,7 +259,7 @@ export class TableTennisScene {
   createImpactEffects() {
     const ringGeo = new THREE.RingGeometry(0.03, 0.08, 32);
     const ringMat = new THREE.MeshBasicMaterial({
-      color: 0x00ffcc,
+      color: 0xd4a03c,
       side: THREE.DoubleSide,
       transparent: true,
       opacity: 0,
@@ -243,7 +271,7 @@ export class TableTennisScene {
     this.impactTimer = 0;
   }
 
-  triggerImpact(position, color = 0x00ffcc) {
+  triggerImpact(position, color = 0xd4a03c) {
     this.impactRing.position.copy(position);
     this.impactRing.position.y += 0.002;
     this.impactRing.material.color.setHex(color);
@@ -363,6 +391,13 @@ export class TableTennisScene {
     this.setHeadParallaxOffset(offset, yaw);
   }
 
+  setOrbit(enabled) {
+    this.isOrbiting = Boolean(enabled);
+    if (!this.isOrbiting) {
+      this.setViewMode(this.currentViewMode);
+    }
+  }
+
   setViewMode(mode) {
     this.currentViewMode = mode;
     const view = this.views[mode] || this.views.host;
@@ -376,60 +411,72 @@ export class TableTennisScene {
   }
 
   update(deltaTime) {
-    // 0. Smooth Camera Perspective with Head-Tracking Parallax and Yaw Rotation
-    const view = this.views[this.currentViewMode] || this.views.host;
-    if (view) {
-      if (view.up) {
-        this.camera.up.copy(view.up);
-      } else {
-        this.camera.up.set(0, 1, 0);
-      }
+    // 0. Idle camera orbit around the table when on menu
+    if (this.isOrbiting) {
+      this.orbitAngle += deltaTime * this.orbitSpeed;
+      const radius = 3.25;
+      const camY = 1.62 + Math.sin(this.orbitAngle * 0.5) * 0.14;
+      this.camera.position.set(
+        Math.sin(this.orbitAngle) * radius,
+        camY,
+        Math.cos(this.orbitAngle) * radius
+      );
+      this.camera.up.set(0, 1, 0);
+      this.camera.lookAt(0, 0.82, 0);
+    } else {
+      // Smooth Camera Perspective with Head-Tracking Parallax and Yaw Rotation
+      const view = this.views[this.currentViewMode] || this.views.host;
+      if (view) {
+        if (view.up) {
+          this.camera.up.copy(view.up);
+        } else {
+          this.camera.up.set(0, 1, 0);
+        }
 
-      this.smoothedHeadOffset.lerp(this.headParallaxOffset, Math.min(1.0, deltaTime * 8.0));
-      this.smoothedHeadYaw += (this.headYaw - this.smoothedHeadYaw) * Math.min(1.0, deltaTime * 8.0);
+        this.smoothedHeadOffset.lerp(this.headParallaxOffset, Math.min(1.0, deltaTime * 8.0));
+        this.smoothedHeadYaw += (this.headYaw - this.smoothedHeadYaw) * Math.min(1.0, deltaTime * 8.0);
 
-      const camX = view.position.x;
-      const camY = view.position.y;
-      const camZ = view.position.z;
+        const camX = view.position.x;
+        const camY = view.position.y;
+        const camZ = view.position.z;
 
-      if (this.currentViewMode === 'topdown') {
-        this.camera.position.set(
-          camX + this.smoothedHeadOffset.x,
-          camY - this.smoothedHeadOffset.z * 0.5,
-          camZ + this.smoothedHeadOffset.y
-        );
-      } else if (this.currentViewMode === 'client') {
-        this.camera.position.set(
-          camX + this.smoothedHeadOffset.x,
-          camY + this.smoothedHeadOffset.y,
-          camZ - this.smoothedHeadOffset.z
-        );
-      } else if (this.currentViewMode === 'broadcast') {
-        this.camera.position.set(
-          camX - this.smoothedHeadOffset.z,
-          camY + this.smoothedHeadOffset.y,
-          camZ + this.smoothedHeadOffset.x
-        );
-      } else {
-        // Standard Host view (-Z looking towards +Z)
-        this.camera.position.set(
-          camX + this.smoothedHeadOffset.x,
-          camY + this.smoothedHeadOffset.y,
-          camZ + this.smoothedHeadOffset.z
-        );
-      }
+        if (this.currentViewMode === 'topdown') {
+          this.camera.position.set(
+            camX + this.smoothedHeadOffset.x,
+            camY - this.smoothedHeadOffset.z * 0.5,
+            camZ + this.smoothedHeadOffset.y
+          );
+        } else if (this.currentViewMode === 'client') {
+          this.camera.position.set(
+            camX + this.smoothedHeadOffset.x,
+            camY + this.smoothedHeadOffset.y,
+            camZ - this.smoothedHeadOffset.z
+          );
+        } else if (this.currentViewMode === 'broadcast') {
+          this.camera.position.set(
+            camX - this.smoothedHeadOffset.z,
+            camY + this.smoothedHeadOffset.y,
+            camZ + this.smoothedHeadOffset.x
+          );
+        } else {
+          // Standard Host view (-Z looking towards +Z)
+          this.camera.position.set(
+            camX + this.smoothedHeadOffset.x,
+            camY + this.smoothedHeadOffset.y,
+            camZ + this.smoothedHeadOffset.z
+          );
+        }
 
-      // Apply Head Yaw Rotation around vertical axis:
-      // When looking right (smoothedHeadYaw > 0), the camera pans towards the right
-      // When looking left (smoothedHeadYaw < 0), the camera pans towards the left
-      if (Math.abs(this.smoothedHeadYaw) > 0.0001) {
-        const upAxis = view.up ? view.up.clone() : new THREE.Vector3(0, 1, 0);
-        const baseDir = view.target.clone().sub(this.camera.position);
-        const rotatedDir = baseDir.applyAxisAngle(upAxis, -this.smoothedHeadYaw);
-        const effectiveTarget = this.camera.position.clone().add(rotatedDir);
-        this.camera.lookAt(effectiveTarget);
-      } else {
-        this.camera.lookAt(view.target);
+        // Apply Head Yaw Rotation around vertical axis
+        if (Math.abs(this.smoothedHeadYaw) > 0.0001) {
+          const upAxis = view.up ? view.up.clone() : new THREE.Vector3(0, 1, 0);
+          const baseDir = view.target.clone().sub(this.camera.position);
+          const rotatedDir = baseDir.applyAxisAngle(upAxis, -this.smoothedHeadYaw);
+          const effectiveTarget = this.camera.position.clone().add(rotatedDir);
+          this.camera.lookAt(effectiveTarget);
+        } else {
+          this.camera.lookAt(view.target);
+        }
       }
     }
 
