@@ -20,10 +20,18 @@ export async function ensureFaceDetectionLibrary() {
 
     const script = document.createElement('script');
     script.setAttribute('data-face-detect', 'true');
-    script.src = 'https://cdn.jsdelivr.net/npm/@mediapipe/face_detection/face_detection.js';
+    script.src = 'https://cdn.jsdelivr.net/npm/@mediapipe/face_detection@0.4.1646425229/face_detection.js';
     script.crossOrigin = 'anonymous';
     script.onload = () => resolve(true);
-    script.onerror = () => resolve(false);
+    script.onerror = () => {
+      // Secondary fallback to unpkg
+      const unpkgScript = document.createElement('script');
+      unpkgScript.src = 'https://unpkg.com/@mediapipe/face_detection@0.4.1646425229/face_detection.js';
+      unpkgScript.crossOrigin = 'anonymous';
+      unpkgScript.onload = () => resolve(true);
+      unpkgScript.onerror = () => resolve(false);
+      document.head.appendChild(unpkgScript);
+    };
     document.head.appendChild(script);
   });
 }
@@ -192,10 +200,7 @@ export class FaceTracker {
       if (!this.faceDetection) {
         this.faceDetection = new window.FaceDetection({
           locateFile: (file) => {
-            if (file.includes('hands')) {
-              return `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`;
-            }
-            return `https://cdn.jsdelivr.net/npm/@mediapipe/face_detection/${file}`;
+            return `https://cdn.jsdelivr.net/npm/@mediapipe/face_detection@0.4.1646425229/${file}`;
           },
         });
 
@@ -239,9 +244,9 @@ export class FaceTracker {
       if (!this.enabled || !this.isTracking) return;
 
       const now = performance.now();
+      const isReady = this.videoElement && (this.videoElement.readyState >= 2 || (this.videoElement.videoWidth > 0 && !this.videoElement.paused));
       if (
-        this.videoElement &&
-        this.videoElement.readyState >= 2 &&
+        isReady &&
         this.videoElement.videoWidth > 0 &&
         now - this.lastFrameTime >= this.frameIntervalMs
       ) {
@@ -249,22 +254,27 @@ export class FaceTracker {
           isProcessing = true;
           this.lastFrameTime = now;
           try {
-            // Downscale camera input to 320x240 for fast face detection
-            if (!this.inferenceCanvas) {
-              this.inferenceCanvas = typeof OffscreenCanvas !== 'undefined'
-                ? new OffscreenCanvas(320, 240)
-                : (typeof document !== 'undefined' ? document.createElement('canvas') : null);
-              if (this.inferenceCanvas) {
-                this.inferenceCanvas.width = 320;
-                this.inferenceCanvas.height = 240;
-                this.inferenceCtx = this.inferenceCanvas.getContext('2d', { willReadFrequently: true });
+            // Downscale camera input to 320x240 for fast face detection using detached DOM canvas
+            if (!this.inferenceCanvas && typeof document !== 'undefined') {
+              this.inferenceCanvas = document.createElement('canvas');
+              this.inferenceCanvas.width = 320;
+              this.inferenceCanvas.height = 240;
+              this.inferenceCtx = this.inferenceCanvas.getContext('2d', { willReadFrequently: true });
+            }
+
+            let sent = false;
+            if (this.inferenceCtx && this.inferenceCanvas && !this.disableInferenceCanvas) {
+              try {
+                this.inferenceCtx.drawImage(this.videoElement, 0, 0, 320, 240);
+                await this.faceDetection.send({ image: this.inferenceCanvas });
+                sent = true;
+              } catch (canvasErr) {
+                console.warn('Face canvas send failed, switching to direct videoElement:', canvasErr);
+                this.disableInferenceCanvas = true;
               }
             }
 
-            if (this.inferenceCtx && this.inferenceCanvas) {
-              this.inferenceCtx.drawImage(this.videoElement, 0, 0, 320, 240);
-              await this.faceDetection.send({ image: this.inferenceCanvas });
-            } else {
+            if (!sent) {
               await this.faceDetection.send({ image: this.videoElement });
             }
           } catch (err) {

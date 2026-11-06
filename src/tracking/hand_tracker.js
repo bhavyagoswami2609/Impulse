@@ -95,7 +95,7 @@ export async function ensureHandsLibrary() {
   }
   if (typeof window.Hands !== 'undefined') return true;
 
-  // Fallback: inject script from unpkg
+  // Fallback: inject script with pinned version for zero binary mismatches
   return new Promise((resolve) => {
     const existing = document.querySelector('script[data-mp-hands-fallback]');
     if (existing) {
@@ -105,10 +105,18 @@ export async function ensureHandsLibrary() {
     }
     const script = document.createElement('script');
     script.setAttribute('data-mp-hands-fallback', 'true');
-    script.src = 'https://unpkg.com/@mediapipe/hands/hands.js';
+    script.src = 'https://cdn.jsdelivr.net/npm/@mediapipe/hands@0.4.1675469240/hands.js';
     script.crossOrigin = 'anonymous';
     script.onload = () => resolve(typeof window.Hands !== 'undefined');
-    script.onerror = () => resolve(false);
+    script.onerror = () => {
+      // Secondary fallback to unpkg
+      const unpkgScript = document.createElement('script');
+      unpkgScript.src = 'https://unpkg.com/@mediapipe/hands@0.4.1675469240/hands.js';
+      unpkgScript.crossOrigin = 'anonymous';
+      unpkgScript.onload = () => resolve(typeof window.Hands !== 'undefined');
+      unpkgScript.onerror = () => resolve(false);
+      document.head.appendChild(unpkgScript);
+    };
     document.head.appendChild(script);
   });
 }
@@ -469,30 +477,49 @@ export class HandTracker {
           }
         }
 
-        // Check if any video hardware exists
+        // Check if any video hardware exists, and prioritize built-in FaceTime HD camera if on Mac
+        let preferredDeviceId = null;
         if (navigator.mediaDevices.enumerateDevices) {
           try {
             const devices = await navigator.mediaDevices.enumerateDevices();
-            const hasVideo = devices.some((d) => d.kind === 'videoinput');
-            if (devices.length > 0 && !hasVideo) {
+            const videoDevices = devices.filter((d) => d.kind === 'videoinput');
+            if (devices.length > 0 && videoDevices.length === 0) {
               const noCamErr = new Error('No webcam detected. Connect a camera or click "Use Mouse Instead".');
               noCamErr.name = 'NotFoundError';
               throw noCamErr;
             }
-          } catch (e) {}
+            // On Mac, prioritize built-in FaceTime camera over disconnected Continuity cameras
+            const builtIn = videoDevices.find((d) => {
+              const label = (d.label || '').toLowerCase();
+              return label.includes('facetime') || label.includes('built-in') || label.includes('apple camera');
+            });
+            if (builtIn && builtIn.deviceId) {
+              preferredDeviceId = builtIn.deviceId;
+            }
+          } catch (e) {
+            if (e.name === 'NotFoundError') throw e;
+          }
         }
 
         // Progressive constraints fallback:
-        // Tier 1: Ideal 640x480 user-facing
-        // Tier 2: User-facing simple
-        // Tier 3: Ideal 640x480 any
-        // Tier 4: Most compatible { video: true, audio: false }
-        const constraintTiers = [
+        // Tier 1: Ideal built-in camera if detected
+        // Tier 2: Ideal 640x480 user-facing
+        // Tier 3: User-facing simple
+        // Tier 4: Ideal 640x480 any
+        // Tier 5: Most compatible { video: true, audio: false }
+        const constraintTiers = [];
+        if (preferredDeviceId) {
+          constraintTiers.push({
+            audio: false,
+            video: { deviceId: { exact: preferredDeviceId }, width: { ideal: 640 }, height: { ideal: 480 } },
+          });
+        }
+        constraintTiers.push(
           { audio: false, video: { width: { ideal: 640 }, height: { ideal: 480 }, facingMode: 'user' } },
           { audio: false, video: { facingMode: 'user' } },
           { audio: false, video: { width: { ideal: 640 }, height: { ideal: 480 } } },
-          { audio: false, video: true },
-        ];
+          { audio: false, video: true }
+        );
 
         let stream = null;
         let lastErrorCaptured = null;
@@ -517,16 +544,28 @@ export class HandTracker {
         this.mediaStream = stream;
 
         if (this.videoElement) {
-          this.videoElement.srcObject = stream;
+          // In Safari on Mac, muted, defaultMuted and playsInline MUST be set before srcObject
           this.videoElement.muted = true;
+          this.videoElement.defaultMuted = true;
+          this.videoElement.playsInline = true;
           this.videoElement.setAttribute('playsinline', '');
+          this.videoElement.setAttribute('webkit-playsinline', '');
           this.videoElement.setAttribute('autoplay', '');
+          this.videoElement.srcObject = stream;
 
-          try {
-            await this.videoElement.play();
-          } catch (e) {
-            console.warn('Video play immediate start notice:', e);
-          }
+          const ensurePlaying = async () => {
+            try {
+              if (this.videoElement && this.videoElement.paused) {
+                await this.videoElement.play();
+              }
+            } catch (e) {}
+          };
+
+          this.videoElement.onloadedmetadata = ensurePlaying;
+          this.videoElement.onloadeddata = ensurePlaying;
+          this.videoElement.oncanplay = ensurePlaying;
+
+          await ensurePlaying();
 
           if (this.videoElement.readyState < 2) {
             await new Promise((resolve) => {
@@ -534,12 +573,13 @@ export class HandTracker {
               const onReady = () => {
                 if (!resolved) {
                   resolved = true;
+                  ensurePlaying();
                   resolve();
                 }
               };
-              this.videoElement.onloadedmetadata = onReady;
-              this.videoElement.onloadeddata = onReady;
-              setTimeout(onReady, 800);
+              this.videoElement.addEventListener('loadeddata', onReady, { once: true });
+              this.videoElement.addEventListener('canplay', onReady, { once: true });
+              setTimeout(onReady, 1200);
             });
           }
         }
@@ -556,9 +596,6 @@ export class HandTracker {
         if (!this.handsInstance) {
           this.handsInstance = new window.Hands({
             locateFile: (file) => {
-              if (file.includes('face')) {
-                return `https://cdn.jsdelivr.net/npm/@mediapipe/face_detection/${file}`;
-              }
               return `https://cdn.jsdelivr.net/npm/@mediapipe/hands@0.4.1675469240/${file}`;
             },
           });
@@ -637,38 +674,50 @@ export class HandTracker {
       if (!this.isTracking) return;
 
       const now = performance.now();
-      if (
-        this.videoElement &&
-        this.videoElement.readyState >= 2 &&
-        this.videoElement.videoWidth > 0
-      ) {
-        // Decouple tracking from rendering: throttle camera inference to 30 FPS
-        if (!isProcessing && (now - this.lastInferenceTime >= this.inferenceIntervalMs) && this.handsInstance) {
-          isProcessing = true;
-          this.lastInferenceTime = now;
+      if (this.videoElement) {
+        // Safari/Mac: proactively guarantee video playback is active and unpaused
+        if (this.videoElement.paused && this.mediaStream) {
           try {
-            // Downscale input canvas fed to tracking model to 320x240 instead of native resolution
-            if (!this.inferenceCanvas) {
-              this.inferenceCanvas = typeof OffscreenCanvas !== 'undefined'
-                ? new OffscreenCanvas(320, 240)
-                : (typeof document !== 'undefined' ? document.createElement('canvas') : null);
-              if (this.inferenceCanvas) {
+            await this.videoElement.play();
+          } catch (e) {}
+        }
+
+        const isReady = this.videoElement.readyState >= 2 || (this.videoElement.videoWidth > 0 && !this.videoElement.paused);
+        if (isReady && this.videoElement.videoWidth > 0) {
+          // Decouple tracking from rendering: throttle camera inference to 30 FPS
+          if (!isProcessing && (now - this.lastInferenceTime >= this.inferenceIntervalMs) && this.handsInstance) {
+            isProcessing = true;
+            this.lastInferenceTime = now;
+            try {
+              // Prefer standard detached DOM canvas for universal cross-browser WebGL compatibility on Mac/Safari
+              if (!this.inferenceCanvas && typeof document !== 'undefined') {
+                this.inferenceCanvas = document.createElement('canvas');
                 this.inferenceCanvas.width = 320;
                 this.inferenceCanvas.height = 240;
                 this.inferenceCtx = this.inferenceCanvas.getContext('2d', { willReadFrequently: true });
               }
-            }
 
-            if (this.inferenceCtx && this.inferenceCanvas) {
-              this.inferenceCtx.drawImage(this.videoElement, 0, 0, 320, 240);
-              await this.handsInstance.send({ image: this.inferenceCanvas });
-            } else {
-              await this.handsInstance.send({ image: this.videoElement });
+              let sent = false;
+              if (this.inferenceCtx && this.inferenceCanvas && !this.disableInferenceCanvas) {
+                try {
+                  this.inferenceCtx.drawImage(this.videoElement, 0, 0, 320, 240);
+                  await this.handsInstance.send({ image: this.inferenceCanvas });
+                  sent = true;
+                } catch (canvasErr) {
+                  // Fallback: If WebGL rejects canvas (e.g. platform texture error), switch permanently to direct videoElement
+                  console.warn('Canvas send failed, switching to direct videoElement:', canvasErr);
+                  this.disableInferenceCanvas = true;
+                }
+              }
+
+              if (!sent) {
+                await this.handsInstance.send({ image: this.videoElement });
+              }
+            } catch (err) {
+              console.warn('MediaPipe send frame error:', err);
+            } finally {
+              isProcessing = false;
             }
-          } catch (err) {
-            console.warn('MediaPipe send frame error:', err);
-          } finally {
-            isProcessing = false;
           }
         }
       }
@@ -817,18 +866,18 @@ export class HandTracker {
   }
 
   onMediaPipeResults(results) {
-    if (!this.canvasCtx || !this.canvasElement) return;
+    if (this.canvasCtx && this.canvasElement) {
+      const ctx = this.canvasCtx;
+      const w = this.canvasElement.width;
+      const h = this.canvasElement.height;
 
-    const ctx = this.canvasCtx;
-    const w = this.canvasElement.width;
-    const h = this.canvasElement.height;
-
-    ctx.save();
-    ctx.clearRect(0, 0, w, h);
-    if (results.image && (results.image.width || results.image.videoWidth)) {
-      try {
-        ctx.drawImage(results.image, 0, 0, w, h);
-      } catch (e) {}
+      ctx.save();
+      ctx.clearRect(0, 0, w, h);
+      if (results.image && (results.image.width || results.image.videoWidth)) {
+        try {
+          ctx.drawImage(results.image, 0, 0, w, h);
+        } catch (e) {}
+      }
     }
 
     if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
@@ -918,7 +967,9 @@ export class HandTracker {
         this.spidermanGestureProgress = 0;
       }
 
-      this.drawHandSkeleton(ctx, landmarks, w, h, isSpiderman);
+      if (this.canvasCtx && this.canvasElement) {
+        this.drawHandSkeleton(this.canvasCtx, landmarks, this.canvasElement.width, this.canvasElement.height, isSpiderman);
+      }
 
       if (!this.isCalibrated) {
         this.autoCalibrateTimer += 0.033;
@@ -1042,7 +1093,9 @@ export class HandTracker {
       }
     }
 
-    ctx.restore();
+    if (this.canvasCtx) {
+      this.canvasCtx.restore();
+    }
   }
 
   drawHandSkeleton(ctx, landmarks, w, h, isSpiderman = false) {
@@ -1128,7 +1181,9 @@ export class HandTracker {
       ctx.shadowColor = 'rgba(212, 160, 60, 0.9)';
       ctx.shadowBlur = 8;
       ctx.fillText('LOCKED ✓', cx, cy - 32);
-      ctx.restore();
+      if (this.canvasCtx) {
+      this.canvasCtx.restore();
+    }
     } else if (this.spidermanGestureProgress > 0) {
       const radius = 26;
       ctx.save();
@@ -1153,9 +1208,13 @@ export class HandTracker {
       ctx.shadowColor = 'rgba(212, 160, 60, 0.9)';
       ctx.shadowBlur = 8;
       ctx.fillText(`LOCKING ${Math.round(this.spidermanGestureProgress * 100)}%`, cx, cy - 32);
-      ctx.restore();
+      if (this.canvasCtx) {
+      this.canvasCtx.restore();
     }
-    ctx.restore();
+    }
+    if (this.canvasCtx) {
+      this.canvasCtx.restore();
+    }
   }
 
   getTransform(dt = 0.016) {

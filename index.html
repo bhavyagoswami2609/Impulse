@@ -4,10 +4,9 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>IMPULSE</title>
-    <!-- MediaPipe dependencies via reliable CDN -->
+    <!-- MediaPipe dependencies via reliable pinned CDN -->
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_detection/face_detection.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands@0.4.1675469240/hands.js" crossorigin="anonymous"></script>
     <!-- Geometric display font Syne, clean body font Outfit, tabular monospace JetBrains Mono -->
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -15,8 +14,8 @@
     <link rel="stylesheet" href="/src/style.css" />
   </head>
   <body>
-    <!-- Global Video Stream Element for Camera Tracking (Positioned in viewport to guarantee active browser decoding) -->
-    <video id="webcam-video" playsinline muted autoplay style="position: fixed; top: 0; left: 0; width: 320px; height: 240px; opacity: 0.001; pointer-events: none; z-index: -100;"></video>
+    <!-- Global Video Stream Element for Camera Tracking (Positioned in viewport with positive z-index to guarantee active browser decoding on Safari & Chrome) -->
+    <video id="webcam-video" playsinline webkit-playsinline muted autoplay style="position: fixed; top: 0; left: 0; width: 320px; height: 240px; opacity: 0.001; pointer-events: none; z-index: 10;"></video>
 
     <!-- 3D Canvas Background Container -->
     <div id="canvas-container"></div>
