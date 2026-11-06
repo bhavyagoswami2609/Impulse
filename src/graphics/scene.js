@@ -41,8 +41,8 @@ export class TableTennisScene {
       }
     } catch (err) {
       console.warn('WebGLRenderer creation fallback:', err);
-      const canvas = document.createElement('canvas');
-      if (this.container) this.container.appendChild(canvas);
+      const canvas = typeof document !== 'undefined' ? document.createElement('canvas') : {};
+      if (this.container && this.container.appendChild) this.container.appendChild(canvas);
       this.renderer = {
         domElement: canvas,
         setSize: () => {},
@@ -60,7 +60,7 @@ export class TableTennisScene {
     this.scene.fog = new THREE.FogExp2(0x0a0907, 0.026);
 
     // 3. Cameras
-    const aspect = window.innerWidth / window.innerHeight;
+    const aspect = typeof window !== 'undefined' ? window.innerWidth / window.innerHeight : 16 / 9;
     this.camera = new THREE.PerspectiveCamera(52, aspect, 0.1, 100);
 
     // Idle camera orbit around the active table during menu showcase
@@ -185,7 +185,9 @@ export class TableTennisScene {
     this.setupPuckTrail();
     this.setupPuckShadow();
 
-    window.addEventListener('resize', this.onWindowResize.bind(this));
+    if (typeof window !== 'undefined') {
+      window.addEventListener('resize', this.onWindowResize.bind(this));
+    }
   }
 
   setupLighting() {
@@ -453,8 +455,9 @@ export class TableTennisScene {
           this.camera.up.set(0, 1, 0);
         }
 
-        this.smoothedHeadOffset.lerp(this.headParallaxOffset, Math.min(1.0, deltaTime * 8.0));
-        this.smoothedHeadYaw += (this.headYaw - this.smoothedHeadYaw) * Math.min(1.0, deltaTime * 8.0);
+        const camBlend = 1.0 - Math.exp(-deltaTime * 7.0);
+        this.smoothedHeadOffset.lerp(this.headParallaxOffset, camBlend);
+        this.smoothedHeadYaw += (this.headYaw - this.smoothedHeadYaw) * camBlend;
 
         const camX = view.position.x;
         const camY = view.position.y;
@@ -468,7 +471,7 @@ export class TableTennisScene {
           );
         } else if (this.currentViewMode === 'client') {
           this.camera.position.set(
-            camX + this.smoothedHeadOffset.x,
+            camX - this.smoothedHeadOffset.x,
             camY + this.smoothedHeadOffset.y,
             camZ - this.smoothedHeadOffset.z
           );
@@ -479,7 +482,7 @@ export class TableTennisScene {
             camZ + this.smoothedHeadOffset.x
           );
         } else {
-          // Standard Host view (-Z looking towards +Z)
+          // Standard Host view (-Z looking towards +Z: screen right is world -X)
           this.camera.position.set(
             camX + this.smoothedHeadOffset.x,
             camY + this.smoothedHeadOffset.y,
@@ -487,11 +490,12 @@ export class TableTennisScene {
           );
         }
 
-        // Apply Head Yaw Rotation around vertical axis (unmirrored: looking right turns view right)
+        // Apply Head Yaw Rotation around vertical axis (unmirrored: looking right turns camera view right)
         if (Math.abs(this.smoothedHeadYaw) > 0.0001) {
           const upAxis = view.up ? view.up.clone() : new THREE.Vector3(0, 1, 0);
           const baseDir = view.target.clone().sub(this.camera.position);
-          const rotatedDir = baseDir.applyAxisAngle(upAxis, this.smoothedHeadYaw);
+          // Clockwise rotation around upAxis turns view right when smoothedHeadYaw > 0
+          const rotatedDir = baseDir.applyAxisAngle(upAxis, -this.smoothedHeadYaw);
           const effectiveTarget = this.camera.position.clone().add(rotatedDir);
           this.camera.lookAt(effectiveTarget);
         } else {

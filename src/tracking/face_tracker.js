@@ -56,10 +56,10 @@ export class FaceTracker {
     this.lastDetectedTime = 0;
 
     // Adaptive OneEuroFilters for zero-jitter, low-latency head tracking
-    this.filterX = new OneEuroFilter(0.8, 0.03, 1.0);
-    this.filterY = new OneEuroFilter(0.8, 0.03, 1.0);
-    this.filterZ = new OneEuroFilter(0.8, 0.03, 1.0);
-    this.filterYaw = new OneEuroFilter(0.8, 0.03, 1.0); // Head Yaw rotation filter
+    this.filterX = new OneEuroFilter(0.40, 0.02, 1.0);
+    this.filterY = new OneEuroFilter(0.40, 0.02, 1.0);
+    this.filterZ = new OneEuroFilter(0.30, 0.015, 1.0);
+    this.filterYaw = new OneEuroFilter(0.40, 0.025, 1.0); // Head Yaw rotation filter
 
     // 3D Parallax Offsets & Head Yaw (Three.js world units & radians)
     this.targetOffset = new THREE.Vector3(0, 0, 0);
@@ -71,19 +71,20 @@ export class FaceTracker {
     this.neutralCenter = null;
     this.neutralYaw = 0;
     this.autoCalibrateCount = 0;
+    this.smoothedLandmarks = null;
 
-    // Parallax Sensitivity Gains & Clamps (Tuned for realistic, subtle, playable game perspective)
-    this.gainX = options.gainX ?? 0.55;    // Subtle lateral parallax shift
-    this.gainY = options.gainY ?? 0.35;    // Subtle vertical parallax elevation
-    this.gainZ = options.gainZ ?? 0.45;    // Subtle depth zoom
-    this.gainYaw = options.gainYaw ?? 0.22; // Gentle, realistic head yaw rotation (down from 0.85)
+    // Parallax Sensitivity Gains & Clamps (Tuned for realistic, organic, fluid head rotation)
+    this.gainX = options.gainX ?? 0.50;    // Subtle lateral parallax shift
+    this.gainY = options.gainY ?? 0.32;    // Subtle vertical parallax elevation
+    this.gainZ = options.gainZ ?? 0.40;    // Subtle depth zoom
+    this.gainYaw = options.gainYaw ?? 0.48; // Natural, responsive head yaw rotation (turns with physical gaze)
 
-    this.maxOffsetX = options.maxOffsetX ?? 0.16; // Max 16cm lateral shift (down from 45cm)
-    this.maxOffsetY = options.maxOffsetY ?? 0.08; // Max 8cm vertical shift (down from 25cm)
-    this.maxOffsetZ = options.maxOffsetZ ?? 0.10; // Max 10cm depth shift (down from 35cm)
-    this.maxYaw = options.maxYaw ?? 0.14;         // Max ~8.0 degrees rotation (down from 26 degrees)
-    this.yawDeadband = options.yawDeadband ?? 0.035; // Deadband around neutral center to absorb natural tremors
-    this.parallaxDeadband = options.parallaxDeadband ?? 0.02; // Deadband for position shifts
+    this.maxOffsetX = options.maxOffsetX ?? 0.16; // Max 16cm lateral shift
+    this.maxOffsetY = options.maxOffsetY ?? 0.08; // Max 8cm vertical shift
+    this.maxOffsetZ = options.maxOffsetZ ?? 0.10; // Max 10cm depth shift
+    this.maxYaw = options.maxYaw ?? 0.18;         // Max ~10.5 degrees rotation
+    this.yawDeadband = options.yawDeadband ?? 0.020; // S-curve deadband to absorb physiological tremors
+    this.parallaxDeadband = options.parallaxDeadband ?? 0.012; // Deadband for position shifts
 
     // MediaPipe FaceDetection instance
     this.faceDetection = null;
@@ -136,10 +137,11 @@ export class FaceTracker {
     this.neutralCenter = null;
     this.autoCalibrateCount = 0;
     this.neutralYaw = 0;
-    this.filterX = new OneEuroFilter(1.2, 0.05, 1.0);
-    this.filterY = new OneEuroFilter(1.2, 0.05, 1.0);
-    this.filterZ = new OneEuroFilter(0.8, 0.02, 1.0);
-    this.filterYaw = new OneEuroFilter(1.0, 0.05, 1.0);
+    this.smoothedLandmarks = null;
+    this.filterX = new OneEuroFilter(0.40, 0.02, 1.0);
+    this.filterY = new OneEuroFilter(0.40, 0.02, 1.0);
+    this.filterZ = new OneEuroFilter(0.30, 0.015, 1.0);
+    this.filterYaw = new OneEuroFilter(0.40, 0.025, 1.0);
 
     if (this.onStatusChange) {
       this.onStatusChange({ enabled: true, tracking: this.isTracking });
@@ -314,17 +316,17 @@ export class FaceTracker {
       this.useMouseFallback = false;
 
       // Horizontal head position:
-      // In webcam mirror/selfie video feed, when user physically moves head LEFT,
-      // face moves to the RIGHT in the video frame (box.xCenter increases towards 1.0).
-      // For unmirrored natural perspective, head moving LEFT must move camera LEFT (-X in Three.js).
-      // Therefore, rawX = 1.0 - box.xCenter ensures camera moves with the head and is NOT mirrored.
-      const rawX = this.invertX ? box.xCenter : (1.0 - box.xCenter);
+      // In unmirrored camera feed, when user physically moves head RIGHT,
+      // face moves towards the camera's LEFT (box.xCenter decreases towards 0.0).
+      // In Three.js host view (camera looking along +Z), screen right is world -X.
+      // Therefore, rawX = box.xCenter (decreasing) produces negative deltaX, which shifts camera to world -X (SCREEN RIGHT).
+      const rawX = this.invertX ? (1.0 - box.xCenter) : box.xCenter;
       // In camera feed, Y=0 is top, Y=1 is bottom; moving head UP should be positive
       const rawY = 1.0 - box.yCenter;
       // Box width / eye distance represents depth (closer = larger box)
       const rawSize = box.width;
 
-      // Filter signals
+      // Filter signals with rock-solid low-frequency cutoff
       const filteredX = this.filterX.filter(rawX, now);
       const filteredY = this.filterY.filter(rawY, now);
       const filteredSize = this.filterZ.filter(rawSize, now);
@@ -341,14 +343,23 @@ export class FaceTracker {
         this.autoCalibrateCount++;
       }
 
-      // Delta relative to neutral center with gentle deadband
+      // Delta relative to neutral center with smoothstep deadband
       const rawDx = filteredX - this.neutralCenter.x;
       const rawDy = filteredY - this.neutralCenter.y;
       const rawDsize = filteredSize - this.neutralCenter.size;
 
-      const cleanDx = Math.abs(rawDx) > this.parallaxDeadband ? (rawDx - Math.sign(rawDx) * this.parallaxDeadband) : 0;
-      const cleanDy = Math.abs(rawDy) > this.parallaxDeadband ? (rawDy - Math.sign(rawDy) * this.parallaxDeadband) : 0;
-      const cleanDsize = Math.abs(rawDsize) > this.parallaxDeadband ? (rawDsize - Math.sign(rawDsize) * this.parallaxDeadband) : 0;
+      const applySmoothDeadband = (value, deadband, rampWidth = 0.025) => {
+        const absVal = Math.abs(value);
+        if (absVal <= deadband) return 0;
+        const excess = absVal - deadband;
+        const t = Math.min(1.0, excess / rampWidth);
+        const smoothFactor = t * t * (3.0 - 2.0 * t);
+        return Math.sign(value) * excess * smoothFactor;
+      };
+
+      const cleanDx = applySmoothDeadband(rawDx, this.parallaxDeadband, 0.025);
+      const cleanDy = applySmoothDeadband(rawDy, this.parallaxDeadband, 0.025);
+      const cleanDsize = applySmoothDeadband(rawDsize, this.parallaxDeadband, 0.025);
 
       // Map to 3D world parallax offsets with sensible clamps
       const offsetX = THREE.MathUtils.clamp(cleanDx * this.gainX, -this.maxOffsetX, this.maxOffsetX);
@@ -358,15 +369,36 @@ export class FaceTracker {
       this.targetOffset.set(offsetX, offsetY, offsetZ);
 
       // Head Yaw Rotation (Looking Left vs Looking Right around vertical Y-axis)
-      // Robust to head roll / sideways tilt by projecting nose offset onto the face eye axis:
+      // Uses the rigid eye-nose facial triangle (invariant to head roll tilt & facial expressions)
       if (landmarks && landmarks.length >= 3) {
         const rightEye = landmarks[0];
         const leftEye = landmarks[1];
         const nose = landmarks[2];
 
+        // Temporal landmark smoothing to eliminate detection micro-jitter at the source
+        if (!this.smoothedLandmarks) {
+          this.smoothedLandmarks = {
+            rightEye: { x: rightEye.x, y: rightEye.y },
+            leftEye: { x: leftEye.x, y: leftEye.y },
+            nose: { x: nose.x, y: nose.y },
+          };
+        } else {
+          const kAlpha = 0.65;
+          this.smoothedLandmarks.rightEye.x += (rightEye.x - this.smoothedLandmarks.rightEye.x) * kAlpha;
+          this.smoothedLandmarks.rightEye.y += (rightEye.y - this.smoothedLandmarks.rightEye.y) * kAlpha;
+          this.smoothedLandmarks.leftEye.x += (leftEye.x - this.smoothedLandmarks.leftEye.x) * kAlpha;
+          this.smoothedLandmarks.leftEye.y += (leftEye.y - this.smoothedLandmarks.leftEye.y) * kAlpha;
+          this.smoothedLandmarks.nose.x += (nose.x - this.smoothedLandmarks.nose.x) * kAlpha;
+          this.smoothedLandmarks.nose.y += (nose.y - this.smoothedLandmarks.nose.y) * kAlpha;
+        }
+
+        const sRight = this.smoothedLandmarks.rightEye;
+        const sLeft = this.smoothedLandmarks.leftEye;
+        const sNose = this.smoothedLandmarks.nose;
+
         // Eye vector and distance
-        const eyeVecX = leftEye.x - rightEye.x;
-        const eyeVecY = leftEye.y - rightEye.y;
+        const eyeVecX = sLeft.x - sRight.x;
+        const eyeVecY = sLeft.y - sRight.y;
         const eyeDist = Math.max(0.02, Math.hypot(eyeVecX, eyeVecY));
 
         // Unit vector along the face's own eye axis
@@ -374,27 +406,16 @@ export class FaceTracker {
         const uY = eyeVecY / eyeDist;
 
         // Nose displacement relative to midpoint between eyes
-        const midEyeX = (rightEye.x + leftEye.x) / 2;
-        const midEyeY = (rightEye.y + leftEye.y) / 2;
-        const noseVecX = nose.x - midEyeX;
-        const noseVecY = nose.y - midEyeY;
+        const midEyeX = (sRight.x + sLeft.x) / 2;
+        const midEyeY = (sRight.y + sLeft.y) / 2;
+        const noseVecX = sNose.x - midEyeX;
+        const noseVecY = sNose.y - midEyeY;
 
         // Project nose displacement onto eye axis (completely invariant to sideways head roll tilt)
+        // When user turns head to their right, nose shifts towards camera left (noseVecX < 0)
+        // -(noseVecX * uX) > 0, producing positive yaw for looking right
         const projectedDisplacement = -(noseVecX * uX + noseVecY * uY);
-        let rawYaw = projectedDisplacement / (eyeDist * 0.55);
-
-        // If ears are present, blend ear distance disparity for extra rotational stability
-        if (landmarks.length >= 6 && landmarks[4] && landmarks[5]) {
-          const rightEar = landmarks[4];
-          const leftEar = landmarks[5];
-          const earSpan = Math.hypot(leftEar.x - rightEar.x, leftEar.y - rightEar.y);
-          if (earSpan > eyeDist * 1.05) {
-            const dRightEar = Math.hypot(nose.x - rightEar.x, nose.y - rightEar.y);
-            const dLeftEar = Math.hypot(nose.x - leftEar.x, nose.y - leftEar.y);
-            const earYaw = (dLeftEar - dRightEar) / (earSpan * 0.65);
-            rawYaw = rawYaw * 0.70 + earYaw * 0.30;
-          }
-        }
+        let rawYaw = projectedDisplacement / (eyeDist * 0.52);
 
         if (this.invertX) {
           rawYaw = -rawYaw;
@@ -408,14 +429,15 @@ export class FaceTracker {
 
         const deltaYaw = filteredYaw - this.neutralYaw;
 
-        // Apply deadband around neutral center to absorb micro-tremors and natural gaze shifts
+        // Smooth Hermite cubic deadband: zero micro-tremors when steady, smooth organic ramp when turning
         const absDelta = Math.abs(deltaYaw);
         if (absDelta <= this.yawDeadband) {
           this.targetYaw = 0;
         } else {
-          // Smooth progressive ramp above deadband
           const excess = absDelta - this.yawDeadband;
-          const scaled = excess * this.gainYaw;
+          const t = Math.min(1.0, excess / 0.035);
+          const smoothFactor = t * t * (3.0 - 2.0 * t);
+          const scaled = excess * smoothFactor * this.gainYaw;
           this.targetYaw = Math.sign(deltaYaw) * THREE.MathUtils.clamp(scaled, 0, this.maxYaw);
         }
       }
@@ -425,6 +447,7 @@ export class FaceTracker {
         this.faceDetected = false;
         this.targetOffset.set(0, 0, 0);
         this.targetYaw = 0;
+        this.smoothedLandmarks = null;
       }
     }
   }
@@ -433,13 +456,14 @@ export class FaceTracker {
    * Locks the user's current head position as the neutral center (calibration).
    */
   setNeutralCenter() {
-    this.filterX = new OneEuroFilter(1.2, 0.05, 1.0);
-    this.filterY = new OneEuroFilter(1.2, 0.05, 1.0);
-    this.filterZ = new OneEuroFilter(1.0, 0.03, 1.0);
-    this.filterYaw = new OneEuroFilter(1.2, 0.05, 1.0);
+    this.filterX = new OneEuroFilter(0.40, 0.02, 1.0);
+    this.filterY = new OneEuroFilter(0.40, 0.02, 1.0);
+    this.filterZ = new OneEuroFilter(0.30, 0.015, 1.0);
+    this.filterYaw = new OneEuroFilter(0.40, 0.025, 1.0);
+    this.smoothedLandmarks = null;
 
     if (this.latestFaceBox) {
-      const rawX = this.invertX ? this.latestFaceBox.xCenter : (1.0 - this.latestFaceBox.xCenter);
+      const rawX = this.invertX ? (1.0 - this.latestFaceBox.xCenter) : this.latestFaceBox.xCenter;
       const rawY = 1.0 - this.latestFaceBox.yCenter;
       const rawSize = this.latestFaceBox.width;
 
@@ -462,7 +486,7 @@ export class FaceTracker {
         const midEyeY = (rightEye.y + leftEye.y) / 2;
         const noseVecX = nose.x - midEyeX;
         const noseVecY = nose.y - midEyeY;
-        let rawYaw = -(noseVecX * uX + noseVecY * uY) / (eyeDist * 0.55);
+        let rawYaw = -(noseVecX * uX + noseVecY * uY) / (eyeDist * 0.52);
         if (this.invertX) rawYaw = -rawYaw;
         this.neutralYaw = rawYaw;
       } else {
@@ -502,7 +526,8 @@ export class FaceTracker {
     const dt = Math.max(0.001, Math.min(deltaTime, 0.05));
 
     if (!this.enabled) {
-      this.currentYaw += (0 - this.currentYaw) * Math.min(1.0, dt * 10.0);
+      const blend = 1.0 - Math.exp(-dt * 8.0);
+      this.currentYaw += (0 - this.currentYaw) * blend;
       return this.currentYaw;
     }
 
@@ -512,7 +537,9 @@ export class FaceTracker {
       this.targetYaw = THREE.MathUtils.clamp(this.mouseNormalized.x * mouseFactor, -this.maxYaw, this.maxYaw);
     }
 
-    this.currentYaw += (this.targetYaw - this.currentYaw) * Math.min(1.0, dt * 11.0);
+    // Smooth critically damped exponential tracking
+    const blend = 1.0 - Math.exp(-dt * 7.5);
+    this.currentYaw += (this.targetYaw - this.currentYaw) * blend;
     return this.currentYaw;
   }
 
@@ -527,24 +554,24 @@ export class FaceTracker {
     const dt = Math.max(0.001, Math.min(deltaTime, 0.05));
 
     if (!this.enabled) {
-      // Smoothly return to center
-      this.currentOffset.lerp(new THREE.Vector3(0, 0, 0), Math.min(1.0, dt * 10.0));
+      const blend = 1.0 - Math.exp(-dt * 8.0);
+      this.currentOffset.lerp(new THREE.Vector3(0, 0, 0), blend);
       return this.currentOffset;
     }
 
     if (this.useMouseFallback && (!this.isTracking || !this.faceDetected)) {
-      // Subtle mouse fallback preview when webcam is not tracking (unmirrored natural perspective)
-      // Moving mouse right shifts camera right (+X), left shifts camera left (-X)
-      const mouseFactor = this.invertX ? -0.22 : 0.22;
+      // Mouse fallback: moving mouse right shifts camera right (world -X for host view)
+      const mouseFactor = this.invertX ? 0.22 : -0.22;
       const mouseX = THREE.MathUtils.clamp(this.mouseNormalized.x * mouseFactor, -this.maxOffsetX, this.maxOffsetX);
       const mouseY = THREE.MathUtils.clamp(this.mouseNormalized.y * 0.14, -this.maxOffsetY, this.maxOffsetY);
       this.targetOffset.set(mouseX, mouseY, 0);
     }
 
-    // Butter-smooth exponential damping (lerp)
-    this.currentOffset.x += (this.targetOffset.x - this.currentOffset.x) * Math.min(1.0, dt * 11.0);
-    this.currentOffset.y += (this.targetOffset.y - this.currentOffset.y) * Math.min(1.0, dt * 11.0);
-    this.currentOffset.z += (this.targetOffset.z - this.currentOffset.z) * Math.min(1.0, dt * 11.0);
+    // Smooth critically damped exponential damping
+    const blend = 1.0 - Math.exp(-dt * 7.5);
+    this.currentOffset.x += (this.targetOffset.x - this.currentOffset.x) * blend;
+    this.currentOffset.y += (this.targetOffset.y - this.currentOffset.y) * blend;
+    this.currentOffset.z += (this.targetOffset.z - this.currentOffset.z) * blend;
 
     return this.currentOffset;
   }
