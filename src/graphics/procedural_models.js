@@ -175,8 +175,8 @@ export function createTableTennisTable() {
   // 1. REGULATION ITTF TOURNAMENT BLUE TABLETOP
   const tableTopMaterial = new THREE.MeshStandardMaterial({
     color: 0x163d70, // Classic regulation ITTF blue
-    roughness: 0.35,
-    metalness: 0.08,
+    roughness: 0.88, // Matte glare-free tournament surface: eliminates harsh distracting specular reflections
+    metalness: 0.0,  // Pure non-metallic dielectric response for zero glare
   });
 
   const tableTopGeo = new THREE.BoxGeometry(TABLE_WIDTH, TABLE_THICKNESS, TABLE_LENGTH);

@@ -550,8 +550,8 @@ export function createAirHockeyTable() {
   const playfieldTex = createPlayfieldTexture();
   const playfieldMat = new THREE.MeshStandardMaterial({
     map: playfieldTex,
-    roughness: 0.18, // Ultra-slick polished laminate surface
-    metalness: 0.08,
+    roughness: 0.82, // Satin arcade finish: soft diffuse illumination without distracting light glare
+    metalness: 0.0,  // Pure non-metallic dielectric response for zero glare
   });
 
   const playfieldGeo = new THREE.PlaneGeometry(W, L);
@@ -583,8 +583,8 @@ export function createAirHockeyTable() {
 
   const reboundCushionMat = new THREE.MeshStandardMaterial({
     color: 0x11161d, // High-density surlyn/nylon rebound face
-    roughness: 0.35,
-    metalness: 0.1,
+    roughness: 0.65, // Soft diffused finish to avoid distracting rail glare
+    metalness: 0.05,
   });
 
   // A. Side Rails (Left and Right along X = ±0.55m)

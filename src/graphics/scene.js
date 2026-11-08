@@ -191,17 +191,17 @@ export class TableTennisScene {
   }
 
   setupLighting() {
-    // 1. Ambient Light - warm tournament court ambient
-    const ambientLight = new THREE.AmbientLight(0xfff2e0, 0.70);
+    // 1. Ambient Light - warm tournament court ambient with balanced diffuse fill
+    const ambientLight = new THREE.AmbientLight(0xfff2e0, 0.75);
     this.scene.add(ambientLight);
 
     // 2. Tournament Sky & Court Hemisphere Light - eliminates pitch-black void beneath meshes
     const hemiLight = new THREE.HemisphereLight(0xfffaee, 0x323a48, 0.65);
     this.scene.add(hemiLight);
 
-    // 3. Overhead Tournament Key Light with positive bias (no self-shadow acne)
-    const keyLight = new THREE.DirectionalLight(0xfff8ee, 1.45);
-    keyLight.position.set(1.5, 6.0, -1.0);
+    // 3. Overhead Tournament Key Light: angled to bounce reflections away from player camera
+    const keyLight = new THREE.DirectionalLight(0xfff8ee, 1.05);
+    keyLight.position.set(1.5, 6.5, 0.5);
     keyLight.castShadow = true;
     keyLight.shadow.mapSize.width = 2048;
     keyLight.shadow.mapSize.height = 2048;
@@ -216,7 +216,7 @@ export class TableTennisScene {
     this.scene.add(keyLight);
 
     // 4. Warm metallic amber fill accent
-    const fillLight = new THREE.DirectionalLight(0xd4a03c, 0.55);
+    const fillLight = new THREE.DirectionalLight(0xd4a03c, 0.45);
     fillLight.position.set(-2.0, 5.0, 3.0);
     this.scene.add(fillLight);
 
@@ -225,8 +225,8 @@ export class TableTennisScene {
     arenaRimLight.position.set(0, 8.0, -8.0);
     this.scene.add(arenaRimLight);
 
-    // 6. Overhead Table Center Spotlight
-    const tableSpot = new THREE.SpotLight(0xfff2dc, 2.0, 12, Math.PI / 4, 0.45, 1.2);
+    // 6. Overhead Table Center Soft Spotlight: softened intensity and feathered penumbra to prevent glare hotspots
+    const tableSpot = new THREE.SpotLight(0xfff2dc, 0.85, 12, Math.PI / 4, 0.85, 1.2);
     tableSpot.position.set(0, 5.2, 0);
     tableSpot.target.position.set(0, TABLE_HEIGHT, 0);
     this.scene.add(tableSpot);
