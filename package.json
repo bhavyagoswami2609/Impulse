@@ -7,7 +7,7 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "deploy": "vite build && npx --yes wrangler pages deploy dist --project-name impulse --branch main"
+    "deploy": "vite build && NODE_OPTIONS=\"--dns-result-order=ipv4first\" npx --yes wrangler pages deploy dist --project-name impulsesports --branch main"
   },
   "dependencies": {
     "cannon-es": "^0.20.0",
